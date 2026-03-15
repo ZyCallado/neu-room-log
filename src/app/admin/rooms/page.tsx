@@ -3,46 +3,81 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { QRCodeSVG } from "qrcode.react";
-import { Plus, Download, Trash2, DoorOpen, QrCode } from "lucide-react";
+import { Plus, Download, Trash2, DoorOpen, QrCode, Loader2 } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription } from "@/components/ui/dialog";
-
-// Mock Data
-const MOCK_ROOMS = [
-  { id: "r1", room_number: "Room 101", created_at: { toDate: () => new Date() } },
-  { id: "r2", room_number: "Room 102", created_at: { toDate: () => new Date() } },
-  { id: "r3", room_number: "Lab A", created_at: { toDate: () => new Date() } },
-  { id: "r4", room_number: "Auditorium", created_at: { toDate: () => new Date() } },
-];
+import { useFirestore, useCollection, useMemoFirebase } from "@/firebase";
+import { collection, serverTimestamp, doc } from "firebase/firestore";
+import { addDocumentNonBlocking, deleteDocumentNonBlocking } from "@/firebase/non-blocking-updates";
+import { useToast } from "@/hooks/use-toast";
 
 export default function AdminRoomsPage() {
-  const [rooms, setRooms] = useState<any[]>(MOCK_ROOMS);
+  const db = useFirestore();
+  const { toast } = useToast();
   const [newRoomNumber, setNewRoomNumber] = useState("");
-  const [loading, setLoading] = useState(false);
+  const [isAdding, setIsAdding] = useState(false);
+  const [isDialogOpen, setIsDialogOpen] = useState(false);
+
+  const roomsQuery = useMemoFirebase(() => collection(db, "rooms"), [db]);
+  const { data: rooms, isLoading } = useCollection(roomsQuery);
 
   const handleAddRoom = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newRoomNumber) return;
-    const newRoom = {
-      id: Math.random().toString(36).substr(2, 9),
-      room_number: newRoomNumber,
-      created_at: { toDate: () => new Date() }
-    };
-    setRooms([...rooms, newRoom]);
-    setNewRoomNumber("");
+    if (!newRoomNumber.trim()) return;
+
+    setIsAdding(true);
+    const roomsRef = collection(db, "rooms");
+    
+    addDocumentNonBlocking(roomsRef, {
+      room_number: newRoomNumber.trim(),
+      created_at: serverTimestamp(),
+    })
+    .then(() => {
+      setNewRoomNumber("");
+      setIsAdding(false);
+      setIsDialogOpen(false);
+      toast({
+        title: "Room Created",
+        description: `${newRoomNumber} has been added successfully.`,
+      });
+    })
+    .catch(() => setIsAdding(false));
   };
 
-  const handleDeleteRoom = (id: string) => {
-    if (confirm("Are you sure you want to delete this room?")) {
-      setRooms(rooms.filter(r => r.id !== id));
+  const handleDeleteRoom = (roomId: string, roomName: string) => {
+    if (confirm(`Are you sure you want to delete ${roomName}?`)) {
+      const roomRef = doc(db, "rooms", roomId);
+      deleteDocumentNonBlocking(roomRef);
+      toast({
+        title: "Room Deleted",
+        description: `${roomName} has been removed.`,
+      });
     }
   };
 
   const downloadQR = (roomId: string, roomName: string) => {
-    // Demo version - just alert
-    alert(`Downloading QR for ${roomName}`);
+    const svg = document.getElementById(`qr-${roomId}`);
+    if (!svg) return;
+
+    const svgData = new XMLSerializer().serializeToString(svg);
+    const canvas = document.createElement("canvas");
+    const ctx = canvas.getContext("2d");
+    const img = new Image();
+    
+    img.onload = () => {
+      canvas.width = img.width;
+      canvas.height = img.height;
+      ctx?.drawImage(img, 0, 0);
+      const pngFile = canvas.toDataURL("image/png");
+      const downloadLink = document.createElement("a");
+      downloadLink.download = `QR-${roomName}.png`;
+      downloadLink.href = pngFile;
+      downloadLink.click();
+    };
+
+    img.src = "data:image/svg+xml;base64," + btoa(svgData);
   };
 
   return (
@@ -50,9 +85,9 @@ export default function AdminRoomsPage() {
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h2 className="text-3xl font-headline font-bold text-primary">Classrooms</h2>
-          <p className="text-muted-foreground">Manage school rooms and generate QR codes for check-ins. (Mock Data)</p>
+          <p className="text-muted-foreground">Manage school rooms and generate permanent QR codes for check-ins.</p>
         </div>
-        <Dialog>
+        <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
           <DialogTrigger asChild>
             <Button className="gap-2 shadow-lg"><Plus className="h-5 w-5" /> Add New Room</Button>
           </DialogTrigger>
@@ -67,8 +102,12 @@ export default function AdminRoomsPage() {
                 value={newRoomNumber} 
                 onChange={e => setNewRoomNumber(e.target.value)} 
                 required
+                disabled={isAdding}
               />
-              <Button type="submit" className="w-full">Create Room</Button>
+              <Button type="submit" className="w-full" disabled={isAdding}>
+                {isAdding ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+                Create Room
+              </Button>
             </form>
           </DialogContent>
         </Dialog>
@@ -80,15 +119,17 @@ export default function AdminRoomsPage() {
             <TableHeader>
               <TableRow>
                 <TableHead>Room Identifier</TableHead>
-                <TableHead className="hidden md:table-cell">Created Date</TableHead>
+                <TableHead className="hidden md:table-cell">ID (Permanent)</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {loading ? (
-                <TableRow><TableCell colSpan={3} className="text-center py-10">Loading rooms...</TableCell></TableRow>
-              ) : rooms.length === 0 ? (
-                <TableRow><TableCell colSpan={3} className="text-center py-10">No rooms found. Add one to get started.</TableCell></TableRow>
+              {isLoading ? (
+                <TableRow><TableCell colSpan={3} className="text-center py-10">
+                  <Loader2 className="h-8 w-8 animate-spin mx-auto text-primary" />
+                </TableCell></TableRow>
+              ) : !rooms || rooms.length === 0 ? (
+                <TableRow><TableCell colSpan={3} className="text-center py-10 text-muted-foreground">No rooms found. Add one to get started.</TableCell></TableRow>
               ) : rooms.map((room) => (
                 <TableRow key={room.id}>
                   <TableCell className="font-medium">
@@ -97,8 +138,8 @@ export default function AdminRoomsPage() {
                       {room.room_number}
                     </div>
                   </TableCell>
-                  <TableCell className="hidden md:table-cell text-muted-foreground">
-                    {room.created_at.toDate().toLocaleDateString()}
+                  <TableCell className="hidden md:table-cell text-xs font-mono text-muted-foreground">
+                    {room.id}
                   </TableCell>
                   <TableCell className="text-right">
                     <div className="flex justify-end gap-2">
@@ -124,12 +165,17 @@ export default function AdminRoomsPage() {
                               />
                             </div>
                             <Button onClick={() => downloadQR(room.id, room.room_number)} className="gap-2">
-                              <Download className="h-4 w-4" /> Download PNG (Demo)
+                              <Download className="h-4 w-4" /> Download PNG
                             </Button>
                           </div>
                         </DialogContent>
                       </Dialog>
-                      <Button variant="ghost" size="icon" onClick={() => handleDeleteRoom(room.id)} className="text-destructive hover:bg-destructive/10">
+                      <Button 
+                        variant="ghost" 
+                        size="icon" 
+                        onClick={() => handleDeleteRoom(room.id, room.room_number)} 
+                        className="text-destructive hover:bg-destructive/10"
+                      >
                         <Trash2 className="h-4 w-4" />
                       </Button>
                     </div>
