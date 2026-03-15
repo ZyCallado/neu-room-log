@@ -1,0 +1,24 @@
+
+{
+  "name": "NEU Room Log",
+  "short_name": "RoomLog",
+  "description": "Progressive Web App for professors to check into classrooms.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#F0F3F5",
+  "theme_color": "#297AA3",
+  "icons": [
+    {
+      "src": "https://picsum.photos/seed/roomlog192/192/192",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "https://picsum.photos/seed/roomlog512/512/512",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
