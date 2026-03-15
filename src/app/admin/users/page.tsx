@@ -2,7 +2,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { db } from "@/lib/firebase";
+import { useFirestore } from "@/firebase";
 import { collection, getDocs, query, where, updateDoc, doc } from "firebase/firestore";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -14,10 +14,11 @@ import { ShieldAlert, ShieldCheck, User } from "lucide-react";
 export default function AdminUsersPage() {
   const [users, setUsers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const db = useFirestore();
 
   useEffect(() => {
     fetchUsers();
-  }, []);
+  }, [db]);
 
   const fetchUsers = async () => {
     const q = query(collection(db, "users"), where("role", "==", "professor"));

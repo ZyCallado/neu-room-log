@@ -3,7 +3,7 @@
 
 import { useState, useEffect } from "react";
 import { useAuth } from "@/context/AuthContext";
-import { db } from "@/lib/firebase";
+import { useFirestore } from "@/firebase";
 import { 
   collection, 
   addDoc, 
@@ -30,6 +30,7 @@ export default function ProfessorDashboard() {
   const [roomDetails, setRoomDetails] = useState<any>(null);
   const [activeSession, setActiveSession] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const db = useFirestore();
 
   useEffect(() => {
     if (!user) return;
@@ -54,17 +55,22 @@ export default function ProfessorDashboard() {
     });
 
     return () => unsubscribe();
-  }, [user]);
+  }, [user, db]);
 
   const handleScan = async (result: string | null) => {
     if (result) {
       setIsScanning(false);
       setScannedRoomId(result);
-      const roomDoc = await getDoc(doc(db, "rooms", result));
-      if (roomDoc.exists()) {
-        setRoomDetails({ id: roomDoc.id, ...roomDoc.data() });
-      } else {
-        alert("Invalid Room QR Code");
+      try {
+        const roomDoc = await getDoc(doc(db, "rooms", result));
+        if (roomDoc.exists()) {
+          setRoomDetails({ id: roomDoc.id, ...roomDoc.data() });
+        } else {
+          alert("Invalid Room QR Code");
+          setScannedRoomId(null);
+        }
+      } catch (err) {
+        console.error("Error scanning room:", err);
         setScannedRoomId(null);
       }
     }

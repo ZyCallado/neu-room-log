@@ -1,8 +1,8 @@
 
 "use client";
 
-import { signInWithPopup } from "firebase/auth";
-import { auth, googleProvider } from "@/lib/firebase";
+import { signInWithPopup, GoogleAuthProvider } from "firebase/auth";
+import { useAuth as useFirebaseAuth } from "@/firebase";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
 import { LogIn } from "lucide-react";
@@ -12,6 +12,7 @@ import { useEffect } from "react";
 
 export default function LoginPage() {
   const { user, loading } = useAuth();
+  const auth = useFirebaseAuth();
   const router = useRouter();
 
   useEffect(() => {
@@ -22,7 +23,8 @@ export default function LoginPage() {
 
   const handleLogin = async () => {
     try {
-      await signInWithPopup(auth, googleProvider);
+      const provider = new GoogleAuthProvider();
+      await signInWithPopup(auth, provider);
     } catch (error) {
       console.error("Login failed:", error);
     }

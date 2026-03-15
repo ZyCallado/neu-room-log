@@ -3,6 +3,7 @@ import type {Metadata} from 'next';
 import './globals.css';
 import {AuthProvider} from '@/context/AuthContext';
 import {Toaster} from '@/components/ui/toaster';
+import {FirebaseClientProvider} from '@/firebase';
 
 export const metadata: Metadata = {
   title: 'NEURoomLog',
@@ -25,10 +26,12 @@ export default function RootLayout({
         <link rel="apple-touch-icon" href="/icons/icon-192x192.png" />
       </head>
       <body className="font-body antialiased min-h-screen bg-background text-foreground">
-        <AuthProvider>
-          {children}
-          <Toaster />
-        </AuthProvider>
+        <FirebaseClientProvider>
+          <AuthProvider>
+            {children}
+            <Toaster />
+          </AuthProvider>
+        </FirebaseClientProvider>
       </body>
     </html>
   );

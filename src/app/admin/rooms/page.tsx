@@ -2,7 +2,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { db } from "@/lib/firebase";
+import { useFirestore } from "@/firebase";
 import { collection, addDoc, getDocs, serverTimestamp, deleteDoc, doc } from "firebase/firestore";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -16,10 +16,11 @@ export default function AdminRoomsPage() {
   const [rooms, setRooms] = useState<any[]>([]);
   const [newRoomNumber, setNewRoomNumber] = useState("");
   const [loading, setLoading] = useState(true);
+  const db = useFirestore();
 
   useEffect(() => {
     fetchRooms();
-  }, []);
+  }, [db]);
 
   const fetchRooms = async () => {
     const querySnapshot = await getDocs(collection(db, "rooms"));

@@ -2,8 +2,8 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { db } from "@/lib/firebase";
-import { collection, getDocs, query, orderBy, Timestamp } from "firebase/firestore";
+import { useFirestore } from "@/firebase";
+import { collection, getDocs, query, orderBy } from "firebase/firestore";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Input } from "@/components/ui/input";
@@ -20,10 +20,11 @@ export default function AdminDashboard() {
   const [dateFilter, setDateFilter] = useState("all");
   const [aiInsights, setAiInsights] = useState<string | null>(null);
   const [generatingAi, setGeneratingAi] = useState(false);
+  const db = useFirestore();
 
   useEffect(() => {
     fetchLogs();
-  }, []);
+  }, [db]);
 
   const fetchLogs = async () => {
     setLoading(true);

@@ -3,8 +3,8 @@
 
 import React, { createContext, useContext, useEffect, useState } from "react";
 import { onAuthStateChanged, User } from "firebase/auth";
-import { doc, getDoc, setDoc, onSnapshot } from "firebase/firestore";
-import { auth, db } from "@/lib/firebase";
+import { doc, setDoc, onSnapshot } from "firebase/firestore";
+import { useAuth as useFirebaseAuth, useFirestore } from "@/firebase";
 import { useRouter } from "next/navigation";
 
 interface AppUser {
@@ -33,6 +33,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [user, setUser] = useState<AppUser | null>(null);
   const [loading, setLoading] = useState(true);
   const router = useRouter();
+  const auth = useFirebaseAuth();
+  const db = useFirestore();
 
   useEffect(() => {
     const unsubscribeAuth = onAuthStateChanged(auth, async (firebaseUser) => {
@@ -42,7 +44,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         // Setup real-time listener for the user document (for blocking enforcement)
         const unsubscribeUserDoc = onSnapshot(userDocRef, async (docSnap) => {
           if (docSnap.exists()) {
-            const data = docSnap.data() as AppUser;
+            const data = docSnap.data();
             setUser({
               uid: firebaseUser.uid,
               email: firebaseUser.email,
@@ -73,7 +75,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     });
 
     return () => unsubscribeAuth();
-  }, []);
+  }, [auth, db]);
 
   const signOut = async () => {
     await auth.signOut();
