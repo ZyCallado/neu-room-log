@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useState, useMemo } from "react";
@@ -31,6 +30,7 @@ import { Scanner } from "@yudiel/react-qr-scanner";
 import { useToast } from "@/hooks/use-toast";
 import { InstallPrompt } from "@/components/InstallPrompt";
 import { format, addMinutes } from "date-fns";
+import { cn } from "@/lib/utils";
 
 export default function ProfessorDashboard() {
   const { user, signOut } = useAuth();
