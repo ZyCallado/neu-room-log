@@ -6,8 +6,9 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { QRCodeSVG } from "qrcode.react";
-import { Plus, Download, Trash2, DoorOpen, QrCode, Loader2 } from "lucide-react";
+import { Plus, Download, Trash2, DoorOpen, QrCode, Loader2, AlertTriangle } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription } from "@/components/ui/dialog";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { useFirestore, useCollection, useMemoFirebase } from "@/firebase";
 import { collection, serverTimestamp, doc } from "firebase/firestore";
 import { addDocumentNonBlocking, deleteDocumentNonBlocking } from "@/firebase/non-blocking-updates";
@@ -47,14 +48,12 @@ export default function AdminRoomsPage() {
   };
 
   const handleDeleteRoom = (roomId: string, roomName: string) => {
-    if (confirm(`Are you sure you want to delete ${roomName}?`)) {
-      const roomRef = doc(db, "rooms", roomId);
-      deleteDocumentNonBlocking(roomRef);
-      toast({
-        title: "Room Deleted",
-        description: `${roomName} has been removed.`,
-      });
-    }
+    const roomRef = doc(db, "rooms", roomId);
+    deleteDocumentNonBlocking(roomRef);
+    toast({
+      title: "Room Deleted",
+      description: `${roomName} has been removed.`,
+    });
   };
 
   const downloadQR = (roomId: string, roomName: string) => {
@@ -170,14 +169,38 @@ export default function AdminRoomsPage() {
                           </div>
                         </DialogContent>
                       </Dialog>
-                      <Button 
-                        variant="ghost" 
-                        size="icon" 
-                        onClick={() => handleDeleteRoom(room.id, room.room_number)} 
-                        className="text-destructive hover:bg-destructive/10"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
+                      
+                      <AlertDialog>
+                        <AlertDialogTrigger asChild>
+                          <Button 
+                            variant="ghost" 
+                            size="icon" 
+                            className="text-destructive hover:bg-destructive/10"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </AlertDialogTrigger>
+                        <AlertDialogContent>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle className="flex items-center gap-2">
+                              <AlertTriangle className="h-5 w-5 text-destructive" />
+                              Delete Classroom?
+                            </AlertDialogTitle>
+                            <AlertDialogDescription>
+                              Are you sure you want to delete <strong>{room.room_number}</strong>? This action cannot be undone and will prevent professors from using the existing QR code for this room.
+                            </AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel>Cancel</AlertDialogCancel>
+                            <AlertDialogAction 
+                              onClick={() => handleDeleteRoom(room.id, room.room_number)}
+                              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                            >
+                              Delete Room
+                            </AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
                     </div>
                   </TableCell>
                 </TableRow>
