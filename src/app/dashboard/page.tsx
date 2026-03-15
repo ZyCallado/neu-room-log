@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { useFirestore, useCollection, useMemoFirebase } from "@/firebase";
 import { collection, query, where, orderBy, limit, doc, serverTimestamp, getDoc } from "firebase/firestore";
@@ -29,7 +29,7 @@ import {
 import { Scanner } from "@yudiel/react-qr-scanner";
 import { useToast } from "@/hooks/use-toast";
 import { InstallPrompt } from "@/components/InstallPrompt";
-import { format, addMinutes } from "date-fns";
+import { format, addMinutes, isAfter } from "date-fns";
 import { cn } from "@/lib/utils";
 
 export default function ProfessorDashboard() {
@@ -79,6 +79,19 @@ export default function ProfessorDashboard() {
       .filter(room => room.room_number.toLowerCase().includes(roomSearchTerm.toLowerCase()))
       .sort((a, b) => a.room_number.localeCompare(b.room_number, undefined, { numeric: true, sensitivity: 'base' }));
   }, [rooms, roomSearchTerm]);
+
+  // Automatic Session Cleanup Effect
+  useEffect(() => {
+    if (activeSession && activeSession.time_in && activeSession.planned_duration) {
+      const startTime = activeSession.time_in.toDate ? activeSession.time_in.toDate() : new Date(activeSession.time_in);
+      const expectedEndTime = addMinutes(startTime, activeSession.planned_duration);
+      
+      // If the current time is after the expected end time, auto-checkout
+      if (isAfter(new Date(), expectedEndTime)) {
+        handleCheckOut(true);
+      }
+    }
+  }, [activeSession]);
 
   const handleScan = async (result: any) => {
     if (!result || isProcessing || !user) return;
@@ -154,7 +167,7 @@ export default function ProfessorDashboard() {
     setIsProcessing(false);
   };
 
-  const handleCheckOut = () => {
+  const handleCheckOut = (isAuto = false) => {
     if (!activeSession || !user) return;
     
     const logRef = doc(db, "users", user.uid, "logs", activeSession.id);
@@ -168,10 +181,14 @@ export default function ProfessorDashboard() {
       current_session: null
     });
 
-    toast({
-      title: "Checked Out",
-      description: `Session in ${activeSession.room_number} ended.`,
-    });
+    if (!isAuto) {
+      toast({
+        title: "Checked Out",
+        description: `Session in ${activeSession.room_number} ended.`,
+      });
+    } else {
+      console.log(`Session in ${activeSession.room_number} was automatically ended due to duration expiration.`);
+    }
   };
 
   if (user?.is_blocked) {
@@ -234,7 +251,7 @@ export default function ProfessorDashboard() {
               <Button 
                 variant="destructive" 
                 className="w-full py-6 text-lg font-bold shadow-lg" 
-                onClick={handleCheckOut}
+                onClick={() => handleCheckOut(false)}
                 disabled={isProcessing}
               >
                 {isProcessing ? <Loader2 className="h-5 w-5 animate-spin mr-2" /> : null}
