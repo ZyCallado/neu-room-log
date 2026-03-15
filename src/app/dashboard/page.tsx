@@ -1,6 +1,7 @@
+
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useMemo } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { useFirestore, useCollection, useMemoFirebase } from "@/firebase";
 import { collection, query, where, orderBy, limit, doc, serverTimestamp, getDoc } from "firebase/firestore";
@@ -9,6 +10,10 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { 
   LogOut, 
   Scan, 
@@ -19,13 +24,13 @@ import {
   DoorOpen, 
   Loader2, 
   Clock,
-  ArrowRight
+  Search,
+  BookOpen
 } from "lucide-react";
 import { Scanner } from "@yudiel/react-qr-scanner";
 import { useToast } from "@/hooks/use-toast";
 import { InstallPrompt } from "@/components/InstallPrompt";
-import { cn } from "@/lib/utils";
-import { format } from "date-fns";
+import { format, addMinutes } from "date-fns";
 
 export default function ProfessorDashboard() {
   const { user, signOut } = useAuth();
@@ -34,6 +39,12 @@ export default function ProfessorDashboard() {
   
   const [isScanning, setIsScanning] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [scannedRoom, setScannedRoom] = useState<{ id: string; room_number: string } | null>(null);
+  const [roomSearchTerm, setRoomSearchTerm] = useState("");
+
+  // Form states
+  const [subject, setSubject] = useState("");
+  const [duration, setDuration] = useState("60");
 
   // 1. Fetch Active Session
   const activeSessionQuery = useMemoFirebase(() => {
@@ -44,7 +55,7 @@ export default function ProfessorDashboard() {
       limit(1)
     );
   }, [db, user]);
-  const { data: activeSessions, isLoading: isActiveLoading } = useCollection(activeSessionQuery);
+  const { data: activeSessions } = useCollection(activeSessionQuery);
   const activeSession = activeSessions?.[0] || null;
 
   // 2. Fetch Recent Logs
@@ -62,14 +73,19 @@ export default function ProfessorDashboard() {
   const roomsQuery = useMemoFirebase(() => collection(db, "rooms"), [db]);
   const { data: rooms, isLoading: isRoomsLoading } = useCollection(roomsQuery);
 
+  const filteredSortedRooms = useMemo(() => {
+    if (!rooms) return [];
+    return rooms
+      .filter(room => room.room_number.toLowerCase().includes(roomSearchTerm.toLowerCase()))
+      .sort((a, b) => a.room_number.localeCompare(b.room_number, undefined, { numeric: true, sensitivity: 'base' }));
+  }, [rooms, roomSearchTerm]);
+
   const handleScan = async (result: any) => {
     if (!result || isProcessing || !user) return;
     const roomId = result[0]?.rawValue;
     if (!roomId) return;
 
     setIsProcessing(true);
-    setIsScanning(false);
-
     try {
       const roomRef = doc(db, "rooms", roomId);
       const roomSnap = await getDoc(roomRef);
@@ -78,36 +94,64 @@ export default function ProfessorDashboard() {
         toast({
           variant: "destructive",
           title: "Invalid QR Code",
-          description: "This QR code does not correspond to a registered classroom.",
+          description: "This classroom is not registered in our system.",
         });
+        setIsProcessing(false);
         return;
       }
 
-      const roomData = roomSnap.data();
-      const logsRef = collection(db, "users", user.uid, "logs");
-
-      addDocumentNonBlocking(logsRef, {
-        professor_id: user.uid,
-        professor_name: user.displayName,
-        room_id: roomId,
-        room_number: roomData.room_number,
-        time_in: serverTimestamp(),
-        time_out: null,
-      });
-
-      toast({
-        title: "Check-in Successful",
-        description: `You have started a session in ${roomData.room_number}.`,
-      });
+      setScannedRoom({ id: roomId, room_number: roomSnap.data().room_number });
+      setIsScanning(false);
     } catch (error) {
       toast({
         variant: "destructive",
-        title: "Error",
-        description: "Could not process check-in. Please try again.",
+        title: "Scan Error",
+        description: "Could not process room identification.",
       });
     } finally {
       setIsProcessing(false);
     }
+  };
+
+  const handleCheckInSubmit = () => {
+    if (!scannedRoom || !user || !subject) return;
+
+    setIsProcessing(true);
+    const logsRef = collection(db, "users", user.uid, "logs");
+    const now = new Date();
+    const endTime = addMinutes(now, parseInt(duration));
+
+    // 1. Create Log
+    addDocumentNonBlocking(logsRef, {
+      professor_id: user.uid,
+      professor_name: user.displayName,
+      room_id: scannedRoom.id,
+      room_number: scannedRoom.room_number,
+      subject,
+      planned_duration: parseInt(duration),
+      time_in: serverTimestamp(),
+      time_out: null,
+    });
+
+    // 2. Update Room Status globally
+    const roomRef = doc(db, "rooms", scannedRoom.id);
+    updateDocumentNonBlocking(roomRef, {
+      current_session: {
+        professor_name: user.displayName,
+        subject,
+        start_time: now.toISOString(),
+        end_time: endTime.toISOString()
+      }
+    });
+
+    toast({
+      title: "Check-in Successful",
+      description: `Session for ${subject} started in ${scannedRoom.room_number}.`,
+    });
+
+    setScannedRoom(null);
+    setSubject("");
+    setIsProcessing(false);
   };
 
   const handleCheckOut = () => {
@@ -116,6 +160,12 @@ export default function ProfessorDashboard() {
     const logRef = doc(db, "users", user.uid, "logs", activeSession.id);
     updateDocumentNonBlocking(logRef, {
       time_out: serverTimestamp(),
+    });
+
+    // Clear room status
+    const roomRef = doc(db, "rooms", activeSession.room_id);
+    updateDocumentNonBlocking(roomRef, {
+      current_session: null
     });
 
     toast({
@@ -133,7 +183,7 @@ export default function ProfessorDashboard() {
             <CardTitle>Account Restricted</CardTitle>
           </CardHeader>
           <CardContent className="text-center">
-            <p>Your account has been restricted. Please contact the administrator for more information.</p>
+            <p>Your account has been restricted. Please contact the administrator.</p>
             <Button variant="outline" className="mt-4" onClick={() => signOut()}>Logout</Button>
           </CardContent>
         </Card>
@@ -165,13 +215,16 @@ export default function ProfessorDashboard() {
                 <CheckCircle2 className="h-10 w-10" />
               </div>
               <CardTitle className="text-2xl">Active Session</CardTitle>
-              <CardDescription>You are currently teaching in {activeSession.room_number}</CardDescription>
+              <CardDescription>{activeSession.subject} in {activeSession.room_number}</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4 pt-4">
-              <div className="rounded-lg bg-card border p-4 flex flex-col gap-1">
-                <div className="flex items-center gap-2 text-primary font-bold">
-                  <MapPin className="h-4 w-4" />
-                  <span>{activeSession.room_number}</span>
+              <div className="rounded-lg bg-card border p-4 flex flex-col gap-2">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-primary font-bold">
+                    <MapPin className="h-4 w-4" />
+                    <span>{activeSession.room_number}</span>
+                  </div>
+                  <Badge variant="outline" className="text-[10px]">{activeSession.subject}</Badge>
                 </div>
                 <div className="flex items-center gap-2 text-xs text-muted-foreground">
                   <Clock className="h-3 w-3" />
@@ -194,8 +247,7 @@ export default function ProfessorDashboard() {
             <div className="overflow-hidden rounded-2xl border bg-black aspect-square relative shadow-xl">
               <Scanner 
                 onScan={handleScan}
-                onError={(err) => {
-                  console.error(err);
+                onError={() => {
                   setIsScanning(false);
                   toast({
                     variant: "destructive",
@@ -215,8 +267,8 @@ export default function ProfessorDashboard() {
         ) : (
           <div className="space-y-8 py-4">
             <div className="text-center space-y-2">
-              <h3 className="text-2xl font-headline font-bold">Ready to Start?</h3>
-              <p className="text-muted-foreground">Scan the classroom QR code to log your usage.</p>
+              <h3 className="text-2xl font-headline font-bold">Classroom Check-in</h3>
+              <p className="text-muted-foreground">Scan a room's QR code to start your session.</p>
             </div>
             <Button 
               className="mx-auto flex h-44 w-44 flex-col items-center justify-center gap-4 rounded-full bg-primary text-primary-foreground shadow-2xl hover:scale-105 active:scale-95 transition-all"
@@ -229,25 +281,73 @@ export default function ProfessorDashboard() {
           </div>
         )}
 
+        {/* Check-in Modal */}
+        <Dialog open={!!scannedRoom} onOpenChange={(open) => !open && setScannedRoom(null)}>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle>Session Details: {scannedRoom?.room_number}</DialogTitle>
+              <DialogDescription>Provide details about your usage of this classroom.</DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 py-4">
+              <div className="space-y-2">
+                <Label htmlFor="subject">Subject / Purpose</Label>
+                <div className="relative">
+                  <BookOpen className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                  <Input 
+                    id="subject" 
+                    placeholder="e.g. IT101 - Programming" 
+                    className="pl-10"
+                    value={subject}
+                    onChange={(e) => setSubject(e.target.value)}
+                  />
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="duration">Estimated Duration</Label>
+                <Select value={duration} onValueChange={setDuration}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select duration" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="30">30 Minutes</SelectItem>
+                    <SelectItem value="60">1 Hour</SelectItem>
+                    <SelectItem value="90">1.5 Hours</SelectItem>
+                    <SelectItem value="120">2 Hours</SelectItem>
+                    <SelectItem value="180">3 Hours</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <DialogFooter>
+              <Button 
+                className="w-full" 
+                onClick={handleCheckInSubmit}
+                disabled={!subject || isProcessing}
+              >
+                {isProcessing && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                Confirm Check-in
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
         <Tabs defaultValue="activity" className="w-full">
           <TabsList className="grid w-full grid-cols-2">
             <TabsTrigger value="activity" className="gap-2">
               <History className="h-4 w-4" /> Activity
             </TabsTrigger>
             <TabsTrigger value="rooms" className="gap-2">
-              <DoorOpen className="h-4 w-4" /> Rooms
+              <DoorOpen className="h-4 w-4" /> Classrooms
             </TabsTrigger>
           </TabsList>
           
           <TabsContent value="activity" className="space-y-4 mt-4">
-            <div className="flex items-center justify-between">
-              <h4 className="font-semibold text-sm text-muted-foreground uppercase tracking-wider">Your Recent Logs</h4>
-            </div>
+            <h4 className="font-semibold text-sm text-muted-foreground uppercase tracking-wider">Your Recent Logs</h4>
             <div className="space-y-3">
               {isLogsLoading ? (
                 <div className="flex justify-center py-8"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
               ) : !recentLogs || recentLogs.length === 0 ? (
-                <p className="text-center py-8 text-sm text-muted-foreground border border-dashed rounded-lg">No recent activity logs found.</p>
+                <p className="text-center py-8 text-sm text-muted-foreground border border-dashed rounded-lg">No activity found.</p>
               ) : (
                 recentLogs.map((log) => (
                   <Card key={log.id} className="shadow-sm">
@@ -259,15 +359,15 @@ export default function ProfessorDashboard() {
                         <div>
                           <p className="font-bold text-sm leading-tight">{log.room_number}</p>
                           <p className="text-[10px] text-muted-foreground">
-                            {log.time_in?.toDate ? format(log.time_in.toDate(), "MMM dd, hh:mm a") : "---"}
+                            {log.subject} • {log.time_in?.toDate ? format(log.time_in.toDate(), "MMM dd, hh:mm a") : "---"}
                           </p>
                         </div>
                       </div>
                       <div className="text-right">
                         {log.time_out ? (
-                          <Badge variant="secondary" className="text-[10px] py-0">Completed</Badge>
+                          <Badge variant="secondary" className="text-[10px] py-0">Done</Badge>
                         ) : (
-                          <Badge className="text-[10px] py-0 animate-pulse bg-green-500">In Progress</Badge>
+                          <Badge className="text-[10px] py-0 animate-pulse bg-green-500">Active</Badge>
                         )}
                       </div>
                     </CardContent>
@@ -278,30 +378,68 @@ export default function ProfessorDashboard() {
           </TabsContent>
 
           <TabsContent value="rooms" className="space-y-4 mt-4">
-            <div className="flex items-center justify-between">
-              <h4 className="font-semibold text-sm text-muted-foreground uppercase tracking-wider">Classroom List</h4>
+            <div className="relative">
+              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+              <Input 
+                placeholder="Search classrooms..." 
+                className="pl-9"
+                value={roomSearchTerm}
+                onChange={(e) => setRoomSearchTerm(e.target.value)}
+              />
             </div>
             <div className="grid grid-cols-1 gap-3">
               {isRoomsLoading ? (
                 <div className="flex justify-center py-8"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
-              ) : !rooms || rooms.length === 0 ? (
-                <p className="text-center py-8 text-sm text-muted-foreground border border-dashed rounded-lg">No classrooms registered yet.</p>
+              ) : filteredSortedRooms.length === 0 ? (
+                <p className="text-center py-8 text-sm text-muted-foreground border border-dashed rounded-lg">No matching rooms found.</p>
               ) : (
-                rooms.map((room) => (
-                  <Card key={room.id} className="shadow-sm">
-                    <CardContent className="p-3 flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        <div className="bg-secondary/10 p-2 rounded-full text-secondary">
-                          <DoorOpen className="h-4 w-4" />
+                filteredSortedRooms.map((room) => {
+                  const session = room.current_session;
+                  const isOccupied = session && new Date(session.end_time) > new Date();
+                  
+                  return (
+                    <Card key={room.id} className={cn("shadow-sm transition-all", isOccupied ? "border-l-4 border-l-secondary bg-secondary/5" : "")}>
+                      <CardContent className="p-4 space-y-3">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <DoorOpen className={cn("h-5 w-5", isOccupied ? "text-secondary" : "text-muted-foreground")} />
+                            <span className="font-bold text-lg">{room.room_number}</span>
+                          </div>
+                          {isOccupied ? (
+                            <Badge variant="secondary" className="bg-secondary/10 text-secondary">OCCUPIED</Badge>
+                          ) : (
+                            <Badge variant="outline" className="text-green-600 border-green-200 bg-green-50">AVAILABLE</Badge>
+                          )}
                         </div>
-                        <span className="font-medium text-sm">{room.room_number}</span>
-                      </div>
-                      <Button variant="ghost" size="sm" className="h-8 text-xs gap-1" onClick={() => setIsScanning(true)}>
-                        Scan QR <ArrowRight className="h-3 w-3" />
-                      </Button>
-                    </CardContent>
-                  </Card>
-                ))
+
+                        {isOccupied && (
+                          <div className="text-xs space-y-1 bg-white/50 p-2 rounded border">
+                            <div className="flex justify-between">
+                              <span className="text-muted-foreground">Professor:</span>
+                              <span className="font-medium">{session.professor_name}</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-muted-foreground">Subject:</span>
+                              <span className="font-medium">{session.subject}</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-muted-foreground">Until:</span>
+                              <span className="font-medium text-secondary">
+                                {format(new Date(session.end_time), "hh:mm a")}
+                              </span>
+                            </div>
+                          </div>
+                        )}
+                        
+                        {!isOccupied && (
+                          <Button variant="ghost" size="sm" className="w-full text-xs gap-2" onClick={() => setIsScanning(true)}>
+                            <Scan className="h-3 w-3" /> Scan to Occupy
+                          </Button>
+                        )}
+                      </CardContent>
+                    </Card>
+                  );
+                })
               )}
             </div>
           </TabsContent>

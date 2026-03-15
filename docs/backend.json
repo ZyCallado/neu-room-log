@@ -1,3 +1,4 @@
+
 {
   "entities": {
     "User": {
@@ -53,6 +54,15 @@
           "type": "string",
           "description": "The timestamp when the room record was created.",
           "format": "date-time"
+        },
+        "current_session": {
+          "type": "object",
+          "properties": {
+            "professor_name": { "type": "string" },
+            "subject": { "type": "string" },
+            "start_time": { "type": "string", "format": "date-time" },
+            "end_time": { "type": "string", "format": "date-time" }
+          }
         }
       },
       "required": [
@@ -85,6 +95,14 @@
         "room_number": {
           "type": "string",
           "description": "The number of the room."
+        },
+        "subject": {
+          "type": "string",
+          "description": "The subject being taught."
+        },
+        "planned_duration": {
+          "type": "number",
+          "description": "Duration in minutes."
         },
         "time_in": {
           "type": "string",
