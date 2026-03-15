@@ -4,9 +4,9 @@
       "$schema": "http://json-schema.org/draft-07/schema#",
       "title": "User",
       "type": "object",
-      "description": "Represents a user of the NEU Room Usage Log application, typically a professor or an administrator, with associated access roles and block status.",
+      "description": "Represents a user of the NEU Room Usage Log application.",
       "properties": {
-        "id": {
+        "uid": {
           "type": "string",
           "description": "Unique identifier for the User entity, corresponding to the Firebase Authentication UID."
         },
@@ -23,159 +23,109 @@
           "type": "string",
           "description": "The role of the user within the application (e.g., 'admin' or 'professor')."
         },
-        "isBlocked": {
+        "is_blocked": {
           "type": "boolean",
           "description": "Indicates whether the user's access to the system is currently blocked."
         }
       },
       "required": [
-        "id",
-        "name",
+        "uid",
         "email",
         "role",
-        "isBlocked"
+        "is_blocked"
       ]
     },
     "Room": {
       "$schema": "http://json-schema.org/draft-07/schema#",
       "title": "Room",
       "type": "object",
-      "description": "Represents a physical classroom or room that professors can check into, uniquely identified and tracked within the system.",
+      "description": "Represents a physical classroom or room.",
       "properties": {
         "id": {
           "type": "string",
           "description": "Unique identifier for the Room entity."
         },
-        "roomNumber": {
+        "room_number": {
           "type": "string",
           "description": "The unique identifier or number assigned to the room."
         },
-        "createdAt": {
+        "created_at": {
           "type": "string",
           "description": "The timestamp when the room record was created.",
           "format": "date-time"
         }
       },
       "required": [
-        "id",
-        "roomNumber",
-        "createdAt"
+        "room_number",
+        "created_at"
       ]
     },
     "Log": {
       "$schema": "http://json-schema.org/draft-07/schema#",
       "title": "Log",
       "type": "object",
-      "description": "Records a professor's check-in and check-out activity for a specific room, tracking usage over time.",
+      "description": "Records a professor's check-in and check-out activity.",
       "properties": {
         "id": {
           "type": "string",
           "description": "Unique identifier for the Log entity."
         },
-        "professorId": {
+        "professor_id": {
           "type": "string",
-          "description": "Reference to the User entity (professor) who performed the check-in. (Relationship: User 1:N Log)"
+          "description": "Reference to the User entity (professor) who performed the check-in."
         },
-        "roomId": {
+        "professor_name": {
           "type": "string",
-          "description": "Reference to the Room entity where the check-in occurred. (Relationship: Room 1:N Log)"
+          "description": "The name of the professor."
         },
-        "timeIn": {
+        "room_id": {
+          "type": "string",
+          "description": "Reference to the Room entity where the check-in occurred."
+        },
+        "room_number": {
+          "type": "string",
+          "description": "The number of the room."
+        },
+        "time_in": {
           "type": "string",
           "description": "The timestamp when the professor checked into the room.",
           "format": "date-time"
         },
-        "timeOut": {
+        "time_out": {
           "type": "string",
-          "description": "The timestamp when the professor checked out of the room. Can be null if still checked in.",
+          "description": "The timestamp when the professor checked out of the room.",
           "format": "date-time"
         }
       },
       "required": [
-        "id",
-        "professorId",
-        "roomId",
-        "timeIn"
+        "professor_id",
+        "room_id",
+        "time_in"
       ]
     }
   },
   "auth": {
     "providers": [
       "password",
-      "anonymous"
+      "google.com"
     ]
   },
   "firestore": {
-    "structure": [
-      {
-        "path": "/users/{userId}",
-        "definition": {
-          "entityName": "User",
-          "schema": {
-            "$ref": "#/backend/entities/User"
-          },
-          "description": "Stores individual user profiles. The document ID (`userId`) matches the Firebase Authentication UID. Includes 'role' and 'isBlocked' fields for access control and management. Access is primarily path-based for owners, with broader read/update capabilities for administrators.",
-          "params": [
-            {
-              "name": "userId",
-              "description": "The Firebase Authentication UID of the user."
-            }
-          ]
-        }
-      },
-      {
-        "path": "/roles_admin/{uid}",
-        "definition": {
-          "entityName": "AdminRole",
-          "schema": {
-            "$ref": "#/backend/entities/User"
-          },
-          "description": "A marker collection to indicate administrator status for a user. A document's existence in this collection signifies that the user (whose UID is 'uid') has admin privileges. Used for authorization independence via `exists()` checks in security rules to avoid reading the full user profile. No actual data beyond existence is typically stored in these documents.",
-          "params": [
-            {
-              "name": "uid",
-              "description": "The Firebase Authentication UID of the administrator."
-            }
-          ]
-        }
-      },
-      {
-        "path": "/rooms/{roomId}",
-        "definition": {
-          "entityName": "Room",
-          "schema": {
-            "$ref": "#/backend/entities/Room"
-          },
-          "description": "Stores definitions of physical rooms. Documents are auto-generated IDs. Readable by all authenticated users (professors for scanning, admins for management), and writable only by administrators.",
-          "params": [
-            {
-              "name": "roomId",
-              "description": "The unique identifier for the room."
-            }
-          ]
-        }
-      },
-      {
-        "path": "/users/{userId}/logs/{logId}",
-        "definition": {
-          "entityName": "Log",
-          "schema": {
-            "$ref": "#/backend/entities/Log"
-          },
-          "description": "Records a professor's check-in and check-out activity for a specific room. Nested under the owning professor's user document, making ownership explicit (userId in path matches professorId in document). Includes denormalized 'professorId' and 'roomId' for direct access and query efficiency. Supports secure collection group queries for administrators.",
-          "params": [
-            {
-              "name": "userId",
-              "description": "The Firebase Authentication UID of the professor who owns this log."
-            },
-            {
-              "name": "logId",
-              "description": "The unique identifier for the log entry."
-            }
-          ]
-        }
-      }
-    ],
-    "reasoning": "The recommended Firestore data structure prioritizes Authorization Independence, Structural Segregation, and consistent Access Modeling to ensure security, scalability, and debuggability.\n\n**Authorization Independence (CRITICAL):**\n\n1.  **Users (`/users/{userId}`)**: Each user document's `id` field matches the Firebase Auth UID (`userId` in the path). This naturally provides ownership where `request.auth.uid == userId` for individual user access. The `role` and `isBlocked` fields are stored directly within the user's document, enabling direct checks for that user. To prevent `get()` calls on `users/{userId}` for role-based authorization in other rules, a dedicated **`/roles_admin/{uid}`** collection is introduced. This collection acts as a denormalized authorization context for admin roles, allowing security rules to use an `exists()` check (e.g., `exists(/databases/$(database)/documents/roles_admin/$(request.auth.uid))`) to determine admin status without reading the full user profile document. This is critical for robust, atomic security rules.\n2.  **Logs (`/users/{userId}/logs/{logId}`)**: Logs are nested under the owning professor's `users` document. The `userId` in the path directly corresponds to the `professorId` within the log document and `request.auth.uid` of the creator/owner. This path-based ownership makes authorization explicit and atomic: a professor can only create/read/update logs where `{userId}` matches their `request.auth.uid`. No `get()` calls to the parent `User` document are needed for a professor to manage their own logs, ensuring authorization independence for these operations.\n3.  **Rooms (`/rooms/{roomId}`)**: Rooms are a global collection with no direct user ownership in their path. Access rules for rooms are based on user authentication status (read for all authenticated users) and admin role (write for admins, determined via the `/roles_admin/{uid}` collection). This avoids any hierarchical dependencies.\n\n**QAPs (Queries as a Proxy for Security):**\n\n1.  **Users (`/users/{userId}`)**: \n    *   **Professor Access**: Professors can `get()` their own user document directly via `users/{request.auth.uid}`, fulfilling QAPs as they query exactly what they're authorized to see.\n    *   **Admin Access**: Admins need to list and manage all professors. Security rules for `/users` will permit `list` operations if `is_admin()` is true (checked via `/roles_admin/{uid}`). The client-side application then filters these results (e.g., `where('role', '==', 'professor')`). The security rule grants broad read access to admins, ensuring the query is not acting as a security filter.\n2.  **Rooms (`/rooms/{roomId}`)**: All authenticated users are allowed to `read` all rooms. This enables professors to fetch room details after scanning a QR and admins to manage rooms. `list` operations are secure as all documents are equally accessible to the permitted group.\n3.  **Logs (`/users/{userId}/logs/{logId}`)**: \n    *   **Professor Access**: Professors can securely `list` their own logs by querying `/users/{request.auth.uid}/logs`. The security rules ensure that `request.auth.uid == userId` in the path for these queries.\n    *   **Admin Access**: Admins need to view all logs across all professors. This is handled using **Firestore Collection Group queries** on the `logs` subcollection. The security rules for the `logs` collection group will permit reads if `request.auth.uid == userId` (for a professor reading their own) OR if `is_admin()` (for an admin reading any log). This allows admins to aggregate data without violating QAPs, as each document's access is independently verified by the rule.\n\n**Structural Segregation & Access Modeling:**\n\n*   **Private Data**: User profiles (`/users/{userId}`) and user-specific logs (`/users/{userId}/logs/{logId}`) are segregated by user ID in their paths, adhering to the Path-Based ownership model. All documents within these paths share the same security posture (owner-access).\n*   **Global Data**: Rooms (`/rooms/{roomId}`) are in a top-level collection, accessible to all authenticated users for reading, and admins for writing, representing a homogeneous security posture for all room documents.\n*   **Global Roles (DBAC)**: The `/roles_admin/{uid}` collection explicitly segregates admin role markers from user profiles, making role-based checks efficient and independent of other document attributes.\n\n**Regarding the 'FirebaseError: Firebase: Error (auth/api-key-not-valid.)' in the user request:** This error is an application-level configuration issue (invalid or missing Firebase API key in `firebase.js`) and is unrelated to the Firestore data structure design. It needs to be resolved by correctly setting up Firebase initialization in the Next.js application."
+    "/users/{userId}": {
+      "schema": "#/backend/entities/User",
+      "description": "Stores individual user profiles. UID in path matches UID in document."
+    },
+    "/roles_admin/{uid}": {
+      "schema": "#/backend/entities/User",
+      "description": "Marker collection for admin status."
+    },
+    "/rooms/{roomId}": {
+      "schema": "#/backend/entities/Room",
+      "description": "Stores classroom definitions."
+    },
+    "/users/{userId}/logs/{logId}": {
+      "schema": "#/backend/entities/Log",
+      "description": "Professor-specific check-in logs."
+    }
   }
 }

@@ -2,133 +2,48 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    /**
-     * NEU Room Usage Log - Security Rules
-     *
-     * CORE PHILOSOPHY:
-     * This ruleset implements a hybrid Ownership and Role-Based Access Control (RBAC) model.
-     * It prioritizes "Authorization Independence" by using a dedicated marker collection
-     * (`/roles_admin`) for administrative checks, avoiding expensive lookups on
-     * full user profile documents.
-     *
-     * DATA STRUCTURE:
-     * - /users/{userId}: Private user profiles, owned by the authenticated user.
-     * - /roles_admin/{uid}: Marker documents indicating administrative status.
-     * - /rooms/{roomId}: Global registry of classrooms, readable by all authenticated users.
-     * - /users/{userId}/logs/{logId}: Check-in logs nested under the professor who created them.
-     *
-     * KEY SECURITY DECISIONS:
-     * 1. Path-Based Ownership: User-specific data is nested under the user's UID,
-     *    making ownership checks (request.auth.uid == userId) extremely efficient.
-     * 2. Marker-Based RBAC: Admin status is verified via `exists()` on the `/roles_admin`
-     *    collection, which is faster and more reliable than reading fields inside a user document.
-     * 3. Relational Integrity: On creation of logs and user profiles, the rules enforce
-     *    that internal ID fields (like `professorId`) match the path parameters.
-     * 4. Collection Group Support: Permissions are defined to support administrative
-     *    reporting across all logs via Collection Group queries.
-     *
-     * DENORMALIZATION FOR AUTHORIZATION:
-     * - The `professorId` is required within the Log document to allow Collection Group
-     *   security checks where the path context is lost.
-     * - The `/roles_admin` collection is a denormalized map of user UIDs to admin status.
-     */
-
-    // --- HELPER FUNCTIONS ---
-
-    /** Checks if the user is authenticated. */
     function isSignedIn() {
       return request.auth != null;
     }
 
-    /** Checks if the user's UID matches the provided ID. */
     function isOwner(userId) {
       return isSignedIn() && request.auth.uid == userId;
     }
 
-    /** Checks if the user exists in the admin marker collection. */
     function isAdmin() {
       return isSignedIn() && exists(/databases/$(database)/documents/roles_admin/$(request.auth.uid));
     }
 
-    // Removed `isExistingOwner` and `isExistingAdmin` functions:
-    // - `isExistingOwner` was unused.
-    // - `isExistingAdmin` attempted to use `resource != null` within a helper function,
-    //   which is not in scope for helper functions and causes an "Invalid variable name: resource" error.
-    //   The `resource != null` check must be performed directly in the `match` block where `resource` is in scope.
-
-
-    // --- COLLECTION RULES ---
-
-    /**
-     * @description Rules for the User profile collection. Users manage their own profiles; admins manage all.
-     * @path /users/{userId}
-     * @allow (get) If user is the owner or an admin. (create) If user is the owner.
-     * @deny (list) If user is not an admin.
-     * @principle Path-based ownership and relational integrity (id matches UID).
-     */
     match /users/{userId} {
       allow get: if isOwner(userId) || isAdmin();
       allow list: if isAdmin();
-      allow create: if isOwner(userId) && request.resource.data.id == userId;
-      allow update: if (isOwner(userId) || isAdmin()) && resource != null && request.resource.data.id == resource.data.id;
+      allow create: if isOwner(userId) && request.resource.data.uid == userId;
+      allow update: if (isOwner(userId) || isAdmin()) && resource != null && request.resource.data.uid == resource.data.uid;
       allow delete: if isAdmin() && resource != null;
     }
 
-    /**
-     * @description Marker collection for admin roles. Used for fast 'exists()' authorization checks.
-     * @path /roles_admin/{uid}
-     * @allow (get) If signed in.
-     * @deny (write) All writes from the client (managed via admin tools or functions).
-     * @principle Structural segregation of roles from data.
-     */
     match /roles_admin/{uid} {
       allow get: if isSignedIn();
       allow list: if isAdmin();
       allow create, update, delete: if false;
     }
 
-    /**
-     * @description Global room registry. Readable by all authenticated professors; managed by admins.
-     * @path /rooms/{roomId}
-     * @allow (read) If signed in. (write) If admin.
-     * @deny (write) If not an admin.
-     * @principle Role-based access for global resources.
-     */
     match /rooms/{roomId} {
       allow get, list: if isSignedIn();
       allow create: if isAdmin();
-      // Changed from `if isExistingAdmin()` to `if isAdmin() && resource != null`
-      // to resolve the 'Invalid variable name: resource' issue.
       allow update, delete: if isAdmin() && resource != null;
     }
 
-    /**
-     * @description User-specific logs for room usage.
-     * @path /users/{userId}/logs/{logId}
-     * @allow (read, create, update) If user is the owner or an. admin.
-     * @deny (create) If professorId in data doesn't match the path userId.
-     * @principle Nested ownership with relational validation.
-     */
     match /users/{userId}/logs/{logId} {
       allow get, list: if isOwner(userId) || isAdmin();
-      allow create: if isOwner(userId) && request.resource.data.professorId == userId;
-      allow update: if (isOwner(userId) || isAdmin()) && resource != null && request.resource.data.professorId == resource.data.professorId;
+      allow create: if isOwner(userId) && request.resource.data.professor_id == userId;
+      allow update: if (isOwner(userId) || isAdmin()) && resource != null && request.resource.data.professor_id == resource.data.professor_id;
       allow delete: if (isOwner(userId) || isAdmin()) && resource != null;
     }
 
-    /**
-     * @description Collection group rules for Logs to support cross-user administrative queries.
-     * @path /{path=**}/logs/{logId}
-     * @allow (read) If user is the professor referenced in the log or an admin.
-     * @deny (write) Writes are handled by the specific path matches above.
-     * @principle Data-based authorization for non-hierarchical queries.
-     */
     match /{path=**}/logs/{logId} {
-      allow get, list: if isAdmin() || (isSignedIn() && resource.data.professorId == request.auth.uid);
-      allow create, update, delete: if false; // Writes are handled by the specific subcollection path rules
+      allow get, list: if isAdmin() || (isSignedIn() && resource.data.professor_id == request.auth.uid);
+      allow create, update, delete: if false; 
     }
   }
 }
-// Note: The 'auth/api-key-not-valid' error reported by the user is a client-side Firebase configuration issue
-// and cannot be resolved through these Security Rules. It requires updating the API Key in the application code.
-// Prototyping Mode: Schema validation is omitted for flexibility, but relational integrity (IDs) is enforced.

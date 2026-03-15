@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useState, useEffect } from "react";
@@ -22,6 +21,8 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Scanner } from "@yudiel/react-qr-scanner";
 import { LogOut, Scan, MapPin, CheckCircle2, AlertTriangle } from "lucide-react";
 import { InstallPrompt } from "@/components/InstallPrompt";
+import { errorEmitter } from '@/firebase/error-emitter';
+import { FirestorePermissionError } from '@/firebase/errors';
 
 export default function ProfessorDashboard() {
   const { user, signOut } = useAuth();
@@ -35,24 +36,34 @@ export default function ProfessorDashboard() {
   useEffect(() => {
     if (!user) return;
 
-    // Fetch active session if any
+    // Fetch active session using collection group query for convenience, 
+    // or direct subcollection query which is safer.
     const q = query(
-      collection(db, "logs"),
-      where("professor_id", "==", user.uid),
+      collection(db, "users", user.uid, "logs"),
       where("time_out", "==", null),
       orderBy("time_in", "desc"),
       limit(1)
     );
 
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      if (!snapshot.empty) {
-        const docSnap = snapshot.docs[0];
-        setActiveSession({ id: docSnap.id, ...docSnap.data() });
-      } else {
-        setActiveSession(null);
+    const unsubscribe = onSnapshot(q, 
+      (snapshot) => {
+        if (!snapshot.empty) {
+          const docSnap = snapshot.docs[0];
+          setActiveSession({ id: docSnap.id, ...docSnap.data() });
+        } else {
+          setActiveSession(null);
+        }
+        setLoading(false);
+      },
+      async (error) => {
+        const permissionError = new FirestorePermissionError({
+          path: `users/${user.uid}/logs`,
+          operation: 'list',
+        });
+        errorEmitter.emit('permission-error', permissionError);
+        setLoading(false);
       }
-      setLoading(false);
-    });
+    );
 
     return () => unsubscribe();
   }, [user, db]);
@@ -70,39 +81,57 @@ export default function ProfessorDashboard() {
           setScannedRoomId(null);
         }
       } catch (err) {
-        console.error("Error scanning room:", err);
+        const permissionError = new FirestorePermissionError({
+          path: `rooms/${result}`,
+          operation: 'get',
+        });
+        errorEmitter.emit('permission-error', permissionError);
         setScannedRoomId(null);
       }
     }
   };
 
-  const handleCheckIn = async () => {
+  const handleCheckIn = () => {
     if (!user || !roomDetails) return;
-    try {
-      await addDoc(collection(db, "logs"), {
-        professor_id: user.uid,
-        professor_name: user.displayName,
-        room_id: roomDetails.id,
-        room_number: roomDetails.room_number,
-        time_in: serverTimestamp(),
-        time_out: null,
+    const logData = {
+      professor_id: user.uid,
+      professor_name: user.displayName,
+      room_id: roomDetails.id,
+      room_number: roomDetails.room_number,
+      time_in: serverTimestamp(),
+      time_out: null,
+    };
+
+    // Use specific subcollection for mutations to ensure path-based ownership rules trigger
+    const logsRef = collection(db, "users", user.uid, "logs");
+    addDoc(logsRef, logData)
+      .then(() => {
+        setScannedRoomId(null);
+        setRoomDetails(null);
+      })
+      .catch(async (error) => {
+        const permissionError = new FirestorePermissionError({
+          path: logsRef.path,
+          operation: 'create',
+          requestResourceData: logData,
+        });
+        errorEmitter.emit('permission-error', permissionError);
       });
-      setScannedRoomId(null);
-      setRoomDetails(null);
-    } catch (error) {
-      console.error("Check-in failed:", error);
-    }
   };
 
-  const handleCheckOut = async () => {
-    if (!activeSession) return;
-    try {
-      await updateDoc(doc(db, "logs", activeSession.id), {
-        time_out: serverTimestamp(),
+  const handleCheckOut = () => {
+    if (!activeSession || !user) return;
+    const logRef = doc(db, "users", user.uid, "logs", activeSession.id);
+    updateDoc(logRef, {
+      time_out: serverTimestamp(),
+    }).catch(async (error) => {
+      const permissionError = new FirestorePermissionError({
+        path: logRef.path,
+        operation: 'update',
+        requestResourceData: { time_out: 'serverTimestamp()' },
       });
-    } catch (error) {
-      console.error("Check-out failed:", error);
-    }
+      errorEmitter.emit('permission-error', permissionError);
+    });
   };
 
   if (loading) return <div className="p-8 text-center">Loading dashboard...</div>;

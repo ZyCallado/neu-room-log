@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useState, useEffect } from "react";
@@ -11,6 +10,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Users, Clock, MapPin, Search, Sparkles, BrainCircuit } from "lucide-react";
 import { generateRoomUsageInsights } from "@/ai/flows/generate-room-usage-insights";
 import { Button } from "@/components/ui/button";
+import { errorEmitter } from '@/firebase/error-emitter';
+import { FirestorePermissionError } from '@/firebase/errors';
 
 export default function AdminDashboard() {
   const [logs, setLogs] = useState<any[]>([]);
@@ -28,36 +29,43 @@ export default function AdminDashboard() {
 
   const fetchLogs = async () => {
     setLoading(true);
-    const q = query(collection(db, "logs"), orderBy("time_in", "desc"));
-    const querySnapshot = await getDocs(q);
-    const data = querySnapshot.docs.map(d => ({ id: d.id, ...d.data() }));
-    setLogs(data);
+    try {
+      // Collection group query to see all logs
+      const q = query(collection(db, "logs"), orderBy("time_in", "desc"));
+      const querySnapshot = await getDocs(q);
+      const data = querySnapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+      setLogs(data);
 
-    // Calculate Stats
-    const active = data.filter(l => !l.time_out).length;
-    
-    const roomCounts: Record<string, number> = {};
-    let totalMs = 0;
-    const now = new Date();
-    const startOfWeek = new Date(now.setDate(now.getDate() - now.getDay()));
-
-    data.forEach(l => {
-      // Room usage count
-      roomCounts[l.room_number] = (roomCounts[l.room_number] || 0) + 1;
+      // Calculate Stats
+      const active = data.filter(l => !l.time_out).length;
       
-      // Weekly hours
-      const timeIn = l.time_in?.toDate();
-      if (timeIn && timeIn >= startOfWeek) {
-        const timeOut = l.time_out?.toDate() || new Date();
-        totalMs += timeOut.getTime() - timeIn.getTime();
-      }
-    });
+      const roomCounts: Record<string, number> = {};
+      let totalMs = 0;
+      const now = new Date();
+      const startOfWeek = new Date(now.setDate(now.getDate() - now.getDay()));
 
-    const mostUsed = Object.entries(roomCounts).sort((a, b) => b[1] - a[1])[0]?.[0] || "N/A";
-    const totalHours = Math.round(totalMs / (1000 * 60 * 60));
+      data.forEach(l => {
+        roomCounts[l.room_number] = (roomCounts[l.room_number] || 0) + 1;
+        const timeIn = l.time_in?.toDate();
+        if (timeIn && timeIn >= startOfWeek) {
+          const timeOut = l.time_out?.toDate() || new Date();
+          totalMs += timeOut.getTime() - timeIn.getTime();
+        }
+      });
 
-    setStats({ activeNow: active, mostUsed, totalHours });
-    setLoading(false);
+      const mostUsed = Object.entries(roomCounts).sort((a, b) => b[1] - a[1])[0]?.[0] || "N/A";
+      const totalHours = Math.round(totalMs / (1000 * 60 * 60));
+
+      setStats({ activeNow: active, mostUsed, totalHours });
+    } catch (err) {
+      const permissionError = new FirestorePermissionError({
+        path: 'logs',
+        operation: 'list',
+      });
+      errorEmitter.emit('permission-error', permissionError);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const getAiInsights = async () => {
