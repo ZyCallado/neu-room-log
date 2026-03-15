@@ -38,7 +38,17 @@ export default function LoginPage() {
   const handleGoogleLogin = async () => {
     try {
       const provider = new GoogleAuthProvider();
-      await signInWithPopup(auth, provider);
+      const result = await signInWithPopup(auth, provider);
+      
+      // Strict domain check immediately after login
+      if (result.user.email && !result.user.email.endsWith("@neu.edu.ph")) {
+        await auth.signOut();
+        toast({
+          variant: "destructive",
+          title: "Access Restricted",
+          description: "Please use your institutional @neu.edu.ph email address.",
+        });
+      }
     } catch (error: any) {
       console.error("Login failed:", error);
       toast({
@@ -51,6 +61,16 @@ export default function LoginPage() {
 
   const handleAdminLogin = async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    if (!adminEmail.endsWith("@neu.edu.ph")) {
+      toast({
+        variant: "destructive",
+        title: "Invalid Email",
+        description: "Administrator accounts must use the @neu.edu.ph domain.",
+      });
+      return;
+    }
+
     setIsAdminLoggingIn(true);
     try {
       await signInWithEmailAndPassword(auth, adminEmail, adminPassword);

@@ -1,10 +1,9 @@
-
 "use client";
 
 import React, { createContext, useContext, useEffect, useState } from "react";
 import { onAuthStateChanged, User as FirebaseUser } from "firebase/auth";
 import { useAuth as useFirebaseAuth, useFirestore } from "@/firebase";
-import { doc, getDoc } from "firebase/firestore";
+import { doc, getDoc, onSnapshot } from "firebase/firestore";
 import { useRouter } from "next/navigation";
 
 interface AppUser {
@@ -40,7 +39,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const db = useFirestore();
 
   // Helper function to fetch full user profile and role
-  const fetchUserProfile = async (fUser: FirebaseUser): Promise<AppUser> => {
+  const fetchUserProfile = async (fUser: FirebaseUser): Promise<AppUser | null> => {
+    // Enforcement: Only @neu.edu.ph emails are allowed
+    if (fUser.email && !fUser.email.endsWith("@neu.edu.ph")) {
+      return null;
+    }
+
     try {
       // 1. Check for Admin role in the specialized roles collection
       const adminDocRef = doc(db, "roles_admin", fUser.uid);
@@ -60,7 +64,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         is_blocked: userData?.is_blocked || false,
       };
     } catch (error) {
-      // Fallback to basic professor if database is unreachable or profile missing
+      // Fallback for basic info if Firestore fetch fails
       return {
         uid: fUser.uid,
         email: fUser.email,
@@ -73,6 +77,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   useEffect(() => {
     const unsubscribeAuth = onAuthStateChanged(auth, (fUser) => {
+      // Global domain enforcement
+      if (fUser && fUser.email && !fUser.email.endsWith("@neu.edu.ph")) {
+        auth.signOut();
+        setFirebaseUser(null);
+        setUser(null);
+        setLoading(false);
+        return;
+      }
+
       setFirebaseUser(fUser);
       if (!fUser) {
         setUser(null);
@@ -83,21 +96,30 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return () => unsubscribeAuth();
   }, [auth]);
 
-  // Effect to handle profile fetching when firebase user changes
+  // Effect to handle real-time profile fetching
   useEffect(() => {
-    let isMounted = true;
+    let unsubscribeUserDoc: () => void = () => {};
 
     if (firebaseUser) {
       setLoading(true);
-      fetchUserProfile(firebaseUser).then((appUser) => {
-        if (isMounted) {
+      
+      const userDocRef = doc(db, "users", firebaseUser.uid);
+      
+      // We use a listener for the user doc to handle "blocked" status in real-time
+      unsubscribeUserDoc = onSnapshot(userDocRef, async (snapshot) => {
+        const appUser = await fetchUserProfile(firebaseUser);
+        setUser(appUser);
+        setLoading(false);
+      }, (error) => {
+        // Fallback on error (like permission denied if doc doesn't exist yet)
+        fetchUserProfile(firebaseUser).then(appUser => {
           setUser(appUser);
           setLoading(false);
-        }
+        });
       });
     }
 
-    return () => { isMounted = false; };
+    return () => unsubscribeUserDoc();
   }, [firebaseUser, db]);
 
   const refreshUser = async () => {
