@@ -1,12 +1,10 @@
+
 "use client";
 
 import React, { createContext, useContext, useEffect, useState } from "react";
 import { onAuthStateChanged } from "firebase/auth";
-import { doc, setDoc, onSnapshot } from "firebase/firestore";
-import { useAuth as useFirebaseAuth, useFirestore } from "@/firebase";
+import { useAuth as useFirebaseAuth } from "@/firebase";
 import { useRouter } from "next/navigation";
-import { errorEmitter } from '@/firebase/error-emitter';
-import { FirestorePermissionError } from '@/firebase/errors';
 
 interface AppUser {
   uid: string;
@@ -35,65 +33,29 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [loading, setLoading] = useState(true);
   const router = useRouter();
   const auth = useFirebaseAuth();
-  const db = useFirestore();
 
   useEffect(() => {
-    const unsubscribeAuth = onAuthStateChanged(auth, async (firebaseUser) => {
+    const unsubscribeAuth = onAuthStateChanged(auth, (firebaseUser) => {
       if (firebaseUser) {
-        const userDocRef = doc(db, "users", firebaseUser.uid);
+        // UI PREVIEW MODE: Bypassing Firestore for profile data.
+        // Assigning roles based on email for easy UI testing.
+        const isAdmin = firebaseUser.email?.toLowerCase().includes("admin");
         
-        // Setup real-time listener for the user document (for blocking enforcement)
-        const unsubscribeUserDoc = onSnapshot(userDocRef, 
-          (docSnap) => {
-            if (docSnap.exists()) {
-              const data = docSnap.data();
-              setUser({
-                uid: firebaseUser.uid,
-                email: firebaseUser.email,
-                displayName: firebaseUser.displayName,
-                role: data.role || "professor",
-                is_blocked: data.is_blocked || false,
-              });
-            } else {
-              // New user setup
-              const newUser: AppUser = {
-                uid: firebaseUser.uid,
-                email: firebaseUser.email,
-                displayName: firebaseUser.displayName,
-                role: "professor", // Default role
-                is_blocked: false,
-              };
-              setDoc(userDocRef, newUser).catch(async (err) => {
-                const permissionError = new FirestorePermissionError({
-                  path: userDocRef.path,
-                  operation: 'create',
-                  requestResourceData: newUser,
-                });
-                errorEmitter.emit('permission-error', permissionError);
-              });
-              setUser(newUser);
-            }
-            setLoading(false);
-          },
-          async (error) => {
-            const permissionError = new FirestorePermissionError({
-              path: userDocRef.path,
-              operation: 'get',
-            });
-            errorEmitter.emit('permission-error', permissionError);
-            setLoading(false);
-          }
-        );
-
-        return () => unsubscribeUserDoc();
+        setUser({
+          uid: firebaseUser.uid,
+          email: firebaseUser.email,
+          displayName: firebaseUser.displayName || firebaseUser.email?.split('@')[0] || "User",
+          role: isAdmin ? "admin" : "professor",
+          is_blocked: false,
+        });
       } else {
         setUser(null);
-        setLoading(false);
       }
+      setLoading(false);
     });
 
     return () => unsubscribeAuth();
-  }, [auth, db]);
+  }, [auth]);
 
   const signOut = async () => {
     await auth.signOut();
