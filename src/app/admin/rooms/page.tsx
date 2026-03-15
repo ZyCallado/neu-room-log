@@ -8,11 +8,13 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { QRCodeSVG } from "qrcode.react";
 import { Plus, Download, Trash2, DoorOpen, QrCode, Loader2, AlertTriangle, Search } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription } from "@/components/ui/dialog";
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { useFirestore, useCollection, useMemoFirebase } from "@/firebase";
 import { collection, serverTimestamp, doc } from "firebase/firestore";
 import { addDocumentNonBlocking, deleteDocumentNonBlocking } from "@/firebase/non-blocking-updates";
 import { useToast } from "@/hooks/use-toast";
+import { Badge } from "@/components/ui/badge";
+import { cn } from "@/lib/utils";
 
 export default function AdminRoomsPage() {
   const db = useFirestore();
@@ -47,6 +49,7 @@ export default function AdminRoomsPage() {
     addDocumentNonBlocking(roomsRef, {
       room_number: newRoomNumber.trim(),
       created_at: serverTimestamp(),
+      current_session: null
     })
     .then(() => {
       setNewRoomNumber("");
@@ -142,95 +145,108 @@ export default function AdminRoomsPage() {
             <TableHeader>
               <TableRow>
                 <TableHead>Room Identifier</TableHead>
+                <TableHead>Status</TableHead>
                 <TableHead className="hidden md:table-cell">ID (Permanent)</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {isLoading ? (
-                <TableRow><TableCell colSpan={3} className="text-center py-10">
+                <TableRow><TableCell colSpan={4} className="text-center py-10">
                   <Loader2 className="h-8 w-8 animate-spin mx-auto text-primary" />
                 </TableCell></TableRow>
               ) : filteredSortedRooms.length === 0 ? (
-                <TableRow><TableCell colSpan={3} className="text-center py-10 text-muted-foreground">
+                <TableRow><TableCell colSpan={4} className="text-center py-10 text-muted-foreground">
                   {searchTerm ? "No matching rooms found." : "No rooms found. Add one to get started."}
                 </TableCell></TableRow>
-              ) : filteredSortedRooms.map((room) => (
-                <TableRow key={room.id}>
-                  <TableCell className="font-medium">
-                    <div className="flex items-center gap-2">
-                      <DoorOpen className="h-4 w-4 text-primary" />
-                      {room.room_number}
-                    </div>
-                  </TableCell>
-                  <TableCell className="hidden md:table-cell text-xs font-mono text-muted-foreground">
-                    {room.id}
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <div className="flex justify-end gap-2">
-                      <Dialog>
-                        <DialogTrigger asChild>
-                          <Button variant="outline" size="sm" className="gap-2">
-                            <QrCode className="h-4 w-4" /> QR Code
-                          </Button>
-                        </DialogTrigger>
-                        <DialogContent className="sm:max-w-md text-center">
-                          <DialogHeader>
-                            <DialogTitle>Check-in QR Code</DialogTitle>
-                            <DialogDescription>{room.room_number}</DialogDescription>
-                          </DialogHeader>
-                          <div className="flex flex-col items-center justify-center py-6 space-y-6">
-                            <div className="bg-white p-4 rounded-xl border-4 border-primary shadow-xl">
-                              <QRCodeSVG 
-                                id={`qr-${room.id}`}
-                                value={room.id} 
-                                size={256} 
-                                level="H"
-                                includeMargin={true}
-                              />
-                            </div>
-                            <Button onClick={() => downloadQR(room.id, room.room_number)} className="gap-2">
-                              <Download className="h-4 w-4" /> Download PNG
+              ) : filteredSortedRooms.map((room) => {
+                const session = room.current_session;
+                const isOccupied = session && new Date(session.end_time) > new Date();
+
+                return (
+                  <TableRow key={room.id}>
+                    <TableCell className="font-medium">
+                      <div className="flex items-center gap-2">
+                        <DoorOpen className="h-4 w-4 text-primary" />
+                        {room.room_number}
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      {isOccupied ? (
+                        <Badge variant="secondary" className="bg-secondary/10 text-secondary">Occupied</Badge>
+                      ) : (
+                        <Badge variant="outline" className="text-green-600 border-green-200 bg-green-50">Available</Badge>
+                      )}
+                    </TableCell>
+                    <TableCell className="hidden md:table-cell text-xs font-mono text-muted-foreground">
+                      {room.id}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <div className="flex justify-end gap-2">
+                        <Dialog>
+                          <DialogTrigger asChild>
+                            <Button variant="outline" size="sm" className="gap-2">
+                              <QrCode className="h-4 w-4" /> QR Code
                             </Button>
-                          </div>
-                        </DialogContent>
-                      </Dialog>
-                      
-                      <AlertDialog>
-                        <AlertDialogTrigger asChild>
-                          <Button 
-                            variant="ghost" 
-                            size="icon" 
-                            className="text-destructive hover:bg-destructive/10"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        </AlertDialogTrigger>
-                        <AlertDialogContent>
-                          <AlertDialogHeader>
-                            <AlertDialogTitle className="flex items-center gap-2">
-                              <AlertTriangle className="h-5 w-5 text-destructive" />
-                              Delete Classroom?
-                            </AlertDialogTitle>
-                            <AlertDialogDescription>
-                              Are you sure you want to delete <strong>{room.room_number}</strong>? This action cannot be undone and will prevent professors from using the existing QR code for this room.
-                            </AlertDialogDescription>
-                          </AlertDialogHeader>
-                          <AlertDialogFooter>
-                            <AlertDialogCancel>Cancel</AlertDialogCancel>
-                            <AlertDialogAction 
-                              onClick={() => handleDeleteRoom(room.id, room.room_number)}
-                              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                          </DialogTrigger>
+                          <DialogContent className="sm:max-w-md text-center">
+                            <DialogHeader>
+                              <DialogTitle>Check-in QR Code</DialogTitle>
+                              <DialogDescription>{room.room_number}</DialogDescription>
+                            </DialogHeader>
+                            <div className="flex flex-col items-center justify-center py-6 space-y-6">
+                              <div className="bg-white p-4 rounded-xl border-4 border-primary shadow-xl">
+                                <QRCodeSVG 
+                                  id={`qr-${room.id}`}
+                                  value={room.id} 
+                                  size={256} 
+                                  level="H"
+                                  includeMargin={true}
+                                />
+                              </div>
+                              <Button onClick={() => downloadQR(room.id, room.room_number)} className="gap-2">
+                                <Download className="h-4 w-4" /> Download PNG
+                              </Button>
+                            </div>
+                          </DialogContent>
+                        </Dialog>
+                        
+                        <AlertDialog>
+                          <AlertDialogTrigger asChild>
+                            <Button 
+                              variant="ghost" 
+                              size="icon" 
+                              className="text-destructive hover:bg-destructive/10"
                             >
-                              Delete Room
-                            </AlertDialogAction>
-                          </AlertDialogFooter>
-                        </AlertDialogContent>
-                      </AlertDialog>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))}
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </AlertDialogTrigger>
+                          <AlertDialogContent>
+                            <AlertDialogHeader>
+                              <AlertDialogTitle className="flex items-center gap-2">
+                                <AlertTriangle className="h-5 w-5 text-destructive" />
+                                Delete Classroom?
+                              </AlertDialogTitle>
+                              <AlertDialogDescription>
+                                Are you sure you want to delete <strong>{room.room_number}</strong>? This action cannot be undone and will prevent professors from using the existing QR code for this room.
+                              </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                              <AlertDialogCancel>Cancel</AlertDialogCancel>
+                              <AlertDialogAction 
+                                onClick={() => handleDeleteRoom(room.id, room.room_number)}
+                                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                              >
+                                Delete Room
+                              </AlertDialogAction>
+                            </AlertDialogFooter>
+                          </AlertDialogContent>
+                        </AlertDialog>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
             </TableBody>
           </Table>
         </CardContent>

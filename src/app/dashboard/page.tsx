@@ -430,12 +430,6 @@ export default function ProfessorDashboard() {
                             </div>
                           </div>
                         )}
-                        
-                        {!isOccupied && (
-                          <Button variant="ghost" size="sm" className="w-full text-xs gap-2" onClick={() => setIsScanning(true)}>
-                            <Scan className="h-3 w-3" /> Scan to Occupy
-                          </Button>
-                        )}
                       </CardContent>
                     </Card>
                   );
