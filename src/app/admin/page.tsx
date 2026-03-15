@@ -1,39 +1,65 @@
+
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Users, Clock, MapPin, Search, Sparkles, BrainCircuit } from "lucide-react";
+import { Users, Clock, MapPin, Search, Sparkles, BrainCircuit, Loader2 } from "lucide-react";
 import { generateRoomUsageInsights } from "@/ai/flows/generate-room-usage-insights";
 import { Button } from "@/components/ui/button";
-
-// Mock Data for UI Inspection
-const MOCK_LOGS = [
-  { id: "1", professor_name: "Dr. Alice Smith", room_number: "Room 101", time_in: { toDate: () => new Date(Date.now() - 3600000) }, time_out: null },
-  { id: "2", professor_name: "Prof. Bob Johnson", room_number: "Lab B", time_in: { toDate: () => new Date(Date.now() - 7200000) }, time_out: { toDate: () => new Date(Date.now() - 3600000) } },
-  { id: "3", professor_name: "Dr. Catherine Lee", room_number: "Room 204", time_in: { toDate: () => new Date(Date.now() - 86400000) }, time_out: { toDate: () => new Date(Date.now() - 82800000) } },
-  { id: "4", professor_name: "Prof. David Miller", room_number: "Room 101", time_in: { toDate: () => new Date(Date.now() - 172800000) }, time_out: { toDate: () => new Date(Date.now() - 169200000) } },
-];
+import { useFirestore, useCollection, useMemoFirebase } from "@/firebase";
+import { collection, query, orderBy } from "firebase/firestore";
+import { format, differenceInMinutes, startOfWeek } from "date-fns";
 
 export default function AdminDashboard() {
-  const [logs, setLogs] = useState<any[]>(MOCK_LOGS);
-  const [stats, setStats] = useState({ activeNow: 1, mostUsed: "Room 101", totalHours: 12 });
-  const [loading, setLoading] = useState(false);
+  const db = useFirestore();
   const [searchTerm, setSearchTerm] = useState("");
   const [dateFilter, setDateFilter] = useState("all");
   const [aiInsights, setAiInsights] = useState<string | null>(null);
   const [generatingAi, setGeneratingAi] = useState(false);
 
+  const logsQuery = useMemoFirebase(() => query(collection(db, "activity_logs"), orderBy("time_in", "desc")), [db]);
+  const { data: logs, isLoading } = useCollection(logsQuery);
+
+  const stats = useMemo(() => {
+    if (!logs) return { activeNow: 0, mostUsed: "---", totalHours: 0 };
+
+    const activeNow = logs.filter(l => !l.time_out).length;
+    
+    const roomCounts: Record<string, number> = {};
+    let totalMinutes = 0;
+    const weekStart = startOfWeek(new Date());
+
+    logs.forEach(log => {
+      roomCounts[log.room_number] = (roomCounts[log.room_number] || 0) + 1;
+      
+      const tIn = log.time_in?.toDate ? log.time_in.toDate() : new Date(log.time_in);
+      if (tIn >= weekStart) {
+        const tOut = log.time_out ? (log.time_out.toDate ? log.time_out.toDate() : new Date(log.time_out)) : new Date();
+        totalMinutes += differenceInMinutes(tOut, tIn);
+      }
+    });
+
+    const mostUsed = Object.entries(roomCounts).reduce((a, b) => a[1] > b[1] ? a : b, ["---", 0])[0];
+
+    return {
+      activeNow,
+      mostUsed,
+      totalHours: Math.round(totalMinutes / 60)
+    };
+  }, [logs]);
+
   const getAiInsights = async () => {
+    if (!logs) return;
     setGeneratingAi(true);
     try {
       const logDataForAi = logs.slice(0, 50).map(l => ({
         room_number: l.room_number,
         professor_name: l.professor_name,
-        time_in: l.time_in.toDate().toISOString(),
-        time_out: l.time_out?.toDate().toISOString() || null
+        time_in: l.time_in?.toDate ? l.time_in.toDate().toISOString() : new Date(l.time_in).toISOString(),
+        time_out: l.time_out ? (l.time_out.toDate ? l.time_out.toDate().toISOString() : new Date(l.time_out).toISOString()) : null
       }));
       const insight = await generateRoomUsageInsights({ logData: logDataForAi });
       setAiInsights(insight);
@@ -44,25 +70,28 @@ export default function AdminDashboard() {
     }
   };
 
-  const filteredLogs = logs.filter(l => {
-    const matchesSearch = l.professor_name?.toLowerCase().includes(searchTerm.toLowerCase()) || 
-                          l.room_number?.toLowerCase().includes(searchTerm.toLowerCase());
-    return matchesSearch;
-  });
+  const filteredLogs = useMemo(() => {
+    if (!logs) return [];
+    return logs.filter(l => {
+      const matchesSearch = l.professor_name?.toLowerCase().includes(searchTerm.toLowerCase()) || 
+                            l.room_number?.toLowerCase().includes(searchTerm.toLowerCase());
+      return matchesSearch;
+    });
+  }, [logs, searchTerm]);
 
   return (
     <div className="space-y-8 animate-in fade-in duration-500">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
           <h2 className="text-3xl font-headline font-bold text-primary">Admin Dashboard</h2>
-          <p className="text-muted-foreground">Monitor classroom utilization and logging activities. (Mock Data)</p>
+          <p className="text-muted-foreground">Monitor real-time classroom utilization across campus.</p>
         </div>
         <Button 
           onClick={getAiInsights} 
-          disabled={generatingAi || logs.length === 0}
+          disabled={generatingAi || !logs || logs.length === 0}
           className="bg-primary/90 hover:bg-primary gap-2"
         >
-          {generatingAi ? <Clock className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+          {generatingAi ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
           Generate AI Insights
         </Button>
       </div>
@@ -155,10 +184,10 @@ export default function AdminDashboard() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {loading ? (
-                <TableRow><TableCell colSpan={5} className="text-center py-10">Loading logs...</TableCell></TableRow>
+              {isLoading ? (
+                <TableRow><TableCell colSpan={5} className="text-center py-10"><Loader2 className="h-6 w-6 animate-spin mx-auto text-primary" /></TableCell></TableRow>
               ) : filteredLogs.length === 0 ? (
-                <TableRow><TableCell colSpan={5} className="text-center py-10">No matching logs found.</TableCell></TableRow>
+                <TableRow><TableCell colSpan={5} className="text-center py-10">No logs found.</TableCell></TableRow>
               ) : filteredLogs.map((log) => (
                 <TableRow key={log.id} className="hover:bg-muted/30">
                   <TableCell className="font-medium">{log.professor_name}</TableCell>
@@ -168,11 +197,15 @@ export default function AdminDashboard() {
                       {log.room_number}
                     </div>
                   </TableCell>
-                  <TableCell>{log.time_in.toDate().toLocaleDateString()}</TableCell>
-                  <TableCell>{log.time_in.toDate().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</TableCell>
+                  <TableCell>
+                    {log.time_in?.toDate ? format(log.time_in.toDate(), "MMM dd, yyyy") : "---"}
+                  </TableCell>
+                  <TableCell>
+                    {log.time_in?.toDate ? format(log.time_in.toDate(), "hh:mm a") : "---"}
+                  </TableCell>
                   <TableCell>
                     {log.time_out ? (
-                      log.time_out.toDate().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                      log.time_out.toDate ? format(log.time_out.toDate(), "hh:mm a") : format(new Date(log.time_out), "hh:mm a")
                     ) : (
                       <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-secondary/10 text-secondary animate-pulse">
                         Active Now

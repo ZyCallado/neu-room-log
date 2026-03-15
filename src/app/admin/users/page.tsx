@@ -1,38 +1,59 @@
+
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
-import { ShieldAlert, ShieldCheck, User } from "lucide-react";
-
-// Mock Data
-const MOCK_USERS = [
-  { id: "u1", displayName: "Dr. Alice Smith", email: "alice.smith@neu.edu.ph", is_blocked: false },
-  { id: "u2", displayName: "Prof. Bob Johnson", email: "bob.johnson@neu.edu.ph", is_blocked: true },
-  { id: "u3", displayName: "Dr. Catherine Lee", email: "cat.lee@neu.edu.ph", is_blocked: false },
-];
+import { ShieldAlert, ShieldCheck, User, Loader2, Search } from "lucide-react";
+import { useFirestore, useCollection, useMemoFirebase } from "@/firebase";
+import { collection, doc } from "firebase/firestore";
+import { updateDocumentNonBlocking } from "@/firebase/non-blocking-updates";
+import { Input } from "@/components/ui/input";
 
 export default function AdminUsersPage() {
-  const [users, setUsers] = useState<any[]>(MOCK_USERS);
-  const [loading, setLoading] = useState(false);
+  const db = useFirestore();
+  const [searchTerm, setSearchTerm] = useState("");
+
+  const usersQuery = useMemoFirebase(() => collection(db, "users"), [db]);
+  const { data: users, isLoading } = useCollection(usersQuery);
+
+  const filteredUsers = useMemo(() => {
+    if (!users) return [];
+    return users.filter(u => 
+      u.name?.toLowerCase().includes(searchTerm.toLowerCase()) || 
+      u.email?.toLowerCase().includes(searchTerm.toLowerCase())
+    );
+  }, [users, searchTerm]);
 
   const toggleBlock = (userId: string, currentStatus: boolean) => {
-    setUsers(users.map(u => u.id === userId ? { ...u, is_blocked: !currentStatus } : u));
+    const userRef = doc(db, "users", userId);
+    updateDocumentNonBlocking(userRef, { is_blocked: !currentStatus });
   };
 
   return (
     <div className="space-y-6 max-w-5xl mx-auto">
-      <div>
-        <h2 className="text-3xl font-headline font-bold text-primary">User Management</h2>
-        <p className="text-muted-foreground">Manage access for professors and instructional staff. (Mock Data)</p>
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div>
+          <h2 className="text-3xl font-headline font-bold text-primary">User Management</h2>
+          <p className="text-muted-foreground">Manage access for professors and instructional staff.</p>
+        </div>
+        <div className="relative w-full md:w-[300px]">
+          <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+          <Input 
+            placeholder="Search name or email..." 
+            className="pl-9"
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+          />
+        </div>
       </div>
 
       <Card>
         <CardHeader>
-          <CardTitle>Professors</CardTitle>
+          <CardTitle>Staff Accounts</CardTitle>
           <CardDescription>Control system access by blocking or unblocking specific accounts.</CardDescription>
         </CardHeader>
         <CardContent className="p-0">
@@ -46,18 +67,18 @@ export default function AdminUsersPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {loading ? (
-                <TableRow><TableCell colSpan={4} className="text-center py-10">Loading users...</TableCell></TableRow>
-              ) : users.length === 0 ? (
-                <TableRow><TableCell colSpan={4} className="text-center py-10">No professor accounts registered yet.</TableCell></TableRow>
-              ) : users.map((u) => (
+              {isLoading ? (
+                <TableRow><TableCell colSpan={4} className="text-center py-10"><Loader2 className="h-6 w-6 animate-spin mx-auto text-primary" /></TableCell></TableRow>
+              ) : filteredUsers.length === 0 ? (
+                <TableRow><TableCell colSpan={4} className="text-center py-10">No accounts found.</TableCell></TableRow>
+              ) : filteredUsers.map((u) => (
                 <TableRow key={u.id}>
                   <TableCell>
                     <div className="flex items-center gap-3">
-                      <div className="h-8 w-8 rounded-full bg-muted flex items-center justify-center text-xs font-bold uppercase">
-                        {u.displayName?.charAt(0) || <User className="h-4 w-4" />}
+                      <div className="h-8 w-8 rounded-full bg-primary/10 text-primary flex items-center justify-center text-xs font-bold uppercase">
+                        {u.name?.charAt(0) || <User className="h-4 w-4" />}
                       </div>
-                      <span className="font-medium">{u.displayName}</span>
+                      <span className="font-medium">{u.name}</span>
                     </div>
                   </TableCell>
                   <TableCell className="text-muted-foreground">{u.email}</TableCell>

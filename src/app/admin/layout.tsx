@@ -4,7 +4,7 @@
 import { useAuth } from "@/context/AuthContext";
 import { useRouter, usePathname } from "next/navigation";
 import { useEffect } from "react";
-import { LayoutDashboard, Users, DoorOpen, LogOut, ChartBar } from "lucide-react";
+import { LayoutDashboard, Users, DoorOpen, LogOut } from "lucide-react";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -33,7 +33,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       {/* Sidebar for Desktop */}
       <aside className="hidden md:flex w-64 flex-col border-r bg-card shadow-sm">
         <div className="p-6">
-          <h1 className="text-xl font-headline font-bold text-primary">NEURoom Admin</h1>
+          <h1 className="text-xl font-headline font-bold text-primary">NEU Room Admin</h1>
         </div>
         <nav className="flex-1 space-y-1 px-4">
           {navItems.map((item) => (

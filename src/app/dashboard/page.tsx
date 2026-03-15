@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useState, useMemo, useEffect } from "react";
@@ -42,11 +43,9 @@ export default function ProfessorDashboard() {
   const [scannedRoom, setScannedRoom] = useState<{ id: string; room_number: string } | null>(null);
   const [roomSearchTerm, setRoomSearchTerm] = useState("");
 
-  // Form states
   const [subject, setSubject] = useState("");
   const [duration, setDuration] = useState("60");
 
-  // 1. Fetch Active Session
   const activeSessionQuery = useMemoFirebase(() => {
     if (!user) return null;
     return query(
@@ -58,7 +57,6 @@ export default function ProfessorDashboard() {
   const { data: activeSessions } = useCollection(activeSessionQuery);
   const activeSession = activeSessions?.[0] || null;
 
-  // 2. Fetch Recent Logs
   const recentLogsQuery = useMemoFirebase(() => {
     if (!user) return null;
     return query(
@@ -69,7 +67,6 @@ export default function ProfessorDashboard() {
   }, [db, user]);
   const { data: recentLogs, isLoading: isLogsLoading } = useCollection(recentLogsQuery);
 
-  // 3. Fetch Available Rooms
   const roomsQuery = useMemoFirebase(() => collection(db, "rooms"), [db]);
   const { data: rooms, isLoading: isRoomsLoading } = useCollection(roomsQuery);
 
@@ -80,13 +77,10 @@ export default function ProfessorDashboard() {
       .sort((a, b) => a.room_number.localeCompare(b.room_number, undefined, { numeric: true, sensitivity: 'base' }));
   }, [rooms, roomSearchTerm]);
 
-  // Automatic Session Cleanup Effect
   useEffect(() => {
     if (activeSession && activeSession.time_in && activeSession.planned_duration) {
       const startTime = activeSession.time_in.toDate ? activeSession.time_in.toDate() : new Date(activeSession.time_in);
       const expectedEndTime = addMinutes(startTime, activeSession.planned_duration);
-      
-      // If the current time is after the expected end time, auto-checkout
       if (isAfter(new Date(), expectedEndTime)) {
         handleCheckOut(true);
       }
@@ -102,25 +96,15 @@ export default function ProfessorDashboard() {
     try {
       const roomRef = doc(db, "rooms", roomId);
       const roomSnap = await getDoc(roomRef);
-
       if (!roomSnap.exists()) {
-        toast({
-          variant: "destructive",
-          title: "Invalid QR Code",
-          description: "This classroom is not registered in our system.",
-        });
+        toast({ variant: "destructive", title: "Invalid QR Code", description: "This classroom is not registered." });
         setIsProcessing(false);
         return;
       }
-
       setScannedRoom({ id: roomId, room_number: roomSnap.data().room_number });
       setIsScanning(false);
     } catch (error) {
-      toast({
-        variant: "destructive",
-        title: "Scan Error",
-        description: "Could not process room identification.",
-      });
+      toast({ variant: "destructive", title: "Scan Error", description: "Could not process room." });
     } finally {
       setIsProcessing(false);
     }
@@ -128,14 +112,14 @@ export default function ProfessorDashboard() {
 
   const handleCheckInSubmit = () => {
     if (!scannedRoom || !user || !subject) return;
-
     setIsProcessing(true);
-    const logsRef = collection(db, "users", user.uid, "logs");
+
+    const logId = doc(collection(db, "activity_logs")).id;
     const now = new Date();
     const endTime = addMinutes(now, parseInt(duration));
-
-    // 1. Create Log
-    addDocumentNonBlocking(logsRef, {
+    
+    const logData = {
+      id: logId,
       professor_id: user.uid,
       professor_name: user.displayName,
       room_id: scannedRoom.id,
@@ -144,9 +128,17 @@ export default function ProfessorDashboard() {
       planned_duration: parseInt(duration),
       time_in: serverTimestamp(),
       time_out: null,
-    });
+    };
 
-    // 2. Update Room Status globally
+    // 1. User specific log
+    const userLogRef = doc(db, "users", user.uid, "logs", logId);
+    updateDocumentNonBlocking(userLogRef, logData);
+
+    // 2. Global activity log
+    const globalLogRef = doc(db, "activity_logs", logId);
+    updateDocumentNonBlocking(globalLogRef, logData);
+
+    // 3. Room status
     const roomRef = doc(db, "rooms", scannedRoom.id);
     updateDocumentNonBlocking(roomRef, {
       current_session: {
@@ -157,11 +149,7 @@ export default function ProfessorDashboard() {
       }
     });
 
-    toast({
-      title: "Check-in Successful",
-      description: `Session for ${subject} started in ${scannedRoom.room_number}.`,
-    });
-
+    toast({ title: "Checked In", description: `Session started in ${scannedRoom.room_number}.` });
     setScannedRoom(null);
     setSubject("");
     setIsProcessing(false);
@@ -169,26 +157,14 @@ export default function ProfessorDashboard() {
 
   const handleCheckOut = (isAuto = false) => {
     if (!activeSession || !user) return;
-    
-    const logRef = doc(db, "users", user.uid, "logs", activeSession.id);
-    updateDocumentNonBlocking(logRef, {
-      time_out: serverTimestamp(),
-    });
+    const logId = activeSession.id;
+    const updates = { time_out: serverTimestamp() };
 
-    // Clear room status
-    const roomRef = doc(db, "rooms", activeSession.room_id);
-    updateDocumentNonBlocking(roomRef, {
-      current_session: null
-    });
+    updateDocumentNonBlocking(doc(db, "users", user.uid, "logs", logId), updates);
+    updateDocumentNonBlocking(doc(db, "activity_logs", logId), updates);
+    updateDocumentNonBlocking(doc(db, "rooms", activeSession.room_id), { current_session: null });
 
-    if (!isAuto) {
-      toast({
-        title: "Checked Out",
-        description: `Session in ${activeSession.room_number} ended.`,
-      });
-    } else {
-      console.log(`Session in ${activeSession.room_number} was automatically ended due to duration expiration.`);
-    }
+    if (!isAuto) toast({ title: "Checked Out", description: "Session ended." });
   };
 
   if (user?.is_blocked) {
@@ -266,20 +242,14 @@ export default function ProfessorDashboard() {
                 onScan={handleScan}
                 onError={() => {
                   setIsScanning(false);
-                  toast({
-                    variant: "destructive",
-                    title: "Scanner Error",
-                    description: "Could not access camera.",
-                  });
+                  toast({ variant: "destructive", title: "Scanner Error", description: "Camera access failed." });
                 }}
               />
               <div className="absolute inset-0 border-[40px] border-black/40 pointer-events-none">
                 <div className="w-full h-full border-2 border-primary rounded-lg"></div>
               </div>
             </div>
-            <Button variant="outline" className="w-full" onClick={() => setIsScanning(false)}>
-              Cancel Scanning
-            </Button>
+            <Button variant="outline" className="w-full" onClick={() => setIsScanning(false)}>Cancel</Button>
           </div>
         ) : (
           <div className="space-y-8 py-4">
@@ -298,7 +268,6 @@ export default function ProfessorDashboard() {
           </div>
         )}
 
-        {/* Check-in Modal */}
         <Dialog open={!!scannedRoom} onOpenChange={(open) => !open && setScannedRoom(null)}>
           <DialogContent className="sm:max-w-md">
             <DialogHeader>
@@ -350,12 +319,8 @@ export default function ProfessorDashboard() {
 
         <Tabs defaultValue="activity" className="w-full">
           <TabsList className="grid w-full grid-cols-2">
-            <TabsTrigger value="activity" className="gap-2">
-              <History className="h-4 w-4" /> Activity
-            </TabsTrigger>
-            <TabsTrigger value="rooms" className="gap-2">
-              <DoorOpen className="h-4 w-4" /> Classrooms
-            </TabsTrigger>
+            <TabsTrigger value="activity" className="gap-2"><History className="h-4 w-4" /> Activity</TabsTrigger>
+            <TabsTrigger value="rooms" className="gap-2"><DoorOpen className="h-4 w-4" /> Classrooms</TabsTrigger>
           </TabsList>
           
           <TabsContent value="activity" className="space-y-4 mt-4">
@@ -381,11 +346,7 @@ export default function ProfessorDashboard() {
                         </div>
                       </div>
                       <div className="text-right">
-                        {log.time_out ? (
-                          <Badge variant="secondary" className="text-[10px] py-0">Done</Badge>
-                        ) : (
-                          <Badge className="text-[10px] py-0 animate-pulse bg-green-500">Active</Badge>
-                        )}
+                        {log.time_out ? <Badge variant="secondary" className="text-[10px] py-0">Done</Badge> : <Badge className="text-[10px] py-0 animate-pulse bg-green-500">Active</Badge>}
                       </div>
                     </CardContent>
                   </Card>
@@ -397,54 +358,32 @@ export default function ProfessorDashboard() {
           <TabsContent value="rooms" className="space-y-4 mt-4">
             <div className="relative">
               <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-              <Input 
-                placeholder="Search classrooms..." 
-                className="pl-9"
-                value={roomSearchTerm}
-                onChange={(e) => setRoomSearchTerm(e.target.value)}
-              />
+              <Input placeholder="Search classrooms..." className="pl-9" value={roomSearchTerm} onChange={(e) => setRoomSearchTerm(e.target.value)} />
             </div>
             <div className="grid grid-cols-1 gap-3">
               {isRoomsLoading ? (
                 <div className="flex justify-center py-8"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
               ) : filteredSortedRooms.length === 0 ? (
-                <p className="text-center py-8 text-sm text-muted-foreground border border-dashed rounded-lg">No matching rooms found.</p>
+                <p className="text-center py-8 text-sm text-muted-foreground border border-dashed rounded-lg">No rooms found.</p>
               ) : (
                 filteredSortedRooms.map((room) => {
                   const session = room.current_session;
                   const isOccupied = session && new Date(session.end_time) > new Date();
-                  
                   return (
-                    <Card key={room.id} className={cn("shadow-sm transition-all", isOccupied ? "border-l-4 border-l-secondary bg-secondary/5" : "")}>
+                    <Card key={room.id} className={cn("shadow-sm", isOccupied ? "border-l-4 border-l-secondary bg-secondary/5" : "")}>
                       <CardContent className="p-4 space-y-3">
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-2">
                             <DoorOpen className={cn("h-5 w-5", isOccupied ? "text-secondary" : "text-muted-foreground")} />
                             <span className="font-bold text-lg">{room.room_number}</span>
                           </div>
-                          {isOccupied ? (
-                            <Badge variant="secondary" className="bg-secondary/10 text-secondary">OCCUPIED</Badge>
-                          ) : (
-                            <Badge variant="outline" className="text-green-600 border-green-200 bg-green-50">AVAILABLE</Badge>
-                          )}
+                          {isOccupied ? <Badge variant="secondary" className="bg-secondary/10 text-secondary">OCCUPIED</Badge> : <Badge variant="outline" className="text-green-600 border-green-200 bg-green-50">AVAILABLE</Badge>}
                         </div>
-
                         {isOccupied && (
                           <div className="text-xs space-y-1 bg-white/50 p-2 rounded border">
-                            <div className="flex justify-between">
-                              <span className="text-muted-foreground">Professor:</span>
-                              <span className="font-medium">{session.professor_name}</span>
-                            </div>
-                            <div className="flex justify-between">
-                              <span className="text-muted-foreground">Subject:</span>
-                              <span className="font-medium">{session.subject}</span>
-                            </div>
-                            <div className="flex justify-between">
-                              <span className="text-muted-foreground">Until:</span>
-                              <span className="font-medium text-secondary">
-                                {format(new Date(session.end_time), "hh:mm a")}
-                              </span>
-                            </div>
+                            <div className="flex justify-between"><span className="text-muted-foreground">Professor:</span><span className="font-medium">{session.professor_name}</span></div>
+                            <div className="flex justify-between"><span className="text-muted-foreground">Subject:</span><span className="font-medium">{session.subject}</span></div>
+                            <div className="flex justify-between"><span className="text-muted-foreground">Until:</span><span className="font-medium text-secondary">{format(new Date(session.end_time), "hh:mm a")}</span></div>
                           </div>
                         )}
                       </CardContent>

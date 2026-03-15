@@ -7,7 +7,6 @@ service cloud.firestore {
       return request.auth != null;
     }
 
-    // Enforcement: Only @neu.edu.ph institutional emails are allowed
     function isNeuEmail() {
       return isSignedIn() && request.auth.token.email.matches('.*@neu\\.edu\\.ph$');
     }
@@ -24,34 +23,35 @@ service cloud.firestore {
       allow get: if (isOwner(userId) || isAdmin()) && isNeuEmail();
       allow list: if isAdmin();
       allow create: if isOwner(userId) && request.resource.data.uid == userId && isNeuEmail();
-      allow update: if (isOwner(userId) || isAdmin()) && resource != null && request.resource.data.uid == resource.data.uid && isNeuEmail();
-      allow delete: if isAdmin() && resource != null;
+      allow update: if (isOwner(userId) || isAdmin()) && resource != null && isNeuEmail();
+      allow delete: if isAdmin();
     }
 
     match /roles_admin/{uid} {
       allow get: if isSignedIn();
       allow list: if isAdmin();
       allow create: if isOwner(uid) && isNeuEmail();
-      allow update, delete: if false;
     }
 
     match /rooms/{roomId} {
       allow get, list: if isSignedIn() && isNeuEmail();
       allow create: if isAdmin();
       allow update: if (isAdmin() || isNeuEmail()) && resource != null;
-      allow delete: if isAdmin() && resource != null;
+      allow delete: if isAdmin();
     }
 
     match /users/{userId}/logs/{logId} {
       allow get, list: if (isOwner(userId) || isAdmin()) && isNeuEmail();
-      allow create: if isOwner(userId) && request.resource.data.professor_id == userId && isNeuEmail();
-      allow update: if (isOwner(userId) || isAdmin()) && resource != null && request.resource.data.professor_id == resource.data.professor_id && isNeuEmail();
-      allow delete: if (isOwner(userId) || isAdmin()) && resource != null && isNeuEmail();
+      allow create: if isOwner(userId) && isNeuEmail();
+      allow update: if (isOwner(userId) || isAdmin()) && isNeuEmail();
+      allow delete: if (isOwner(userId) || isAdmin()) && isNeuEmail();
     }
 
-    match /{path=**}/logs/{logId} {
-      allow get, list: if isAdmin() || (isSignedIn() && isNeuEmail() && resource.data.professor_id == request.auth.uid);
-      allow create, update, delete: if false; 
+    match /activity_logs/{logId} {
+      allow get, list: if isAdmin();
+      allow create: if isSignedIn() && isNeuEmail();
+      allow update: if (isAdmin() || (isSignedIn() && isNeuEmail() && resource.data.professor_id == request.auth.uid));
+      allow delete: if isAdmin();
     }
   }
 }
