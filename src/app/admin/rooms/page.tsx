@@ -1,9 +1,6 @@
-
 "use client";
 
-import { useState, useEffect } from "react";
-import { useFirestore } from "@/firebase";
-import { collection, addDoc, getDocs, serverTimestamp, deleteDoc, doc } from "firebase/firestore";
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -12,70 +9,40 @@ import { QRCodeSVG } from "qrcode.react";
 import { Plus, Download, Trash2, DoorOpen, QrCode } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription } from "@/components/ui/dialog";
 
+// Mock Data
+const MOCK_ROOMS = [
+  { id: "r1", room_number: "Room 101", created_at: { toDate: () => new Date() } },
+  { id: "r2", room_number: "Room 102", created_at: { toDate: () => new Date() } },
+  { id: "r3", room_number: "Lab A", created_at: { toDate: () => new Date() } },
+  { id: "r4", room_number: "Auditorium", created_at: { toDate: () => new Date() } },
+];
+
 export default function AdminRoomsPage() {
-  const [rooms, setRooms] = useState<any[]>([]);
+  const [rooms, setRooms] = useState<any[]>(MOCK_ROOMS);
   const [newRoomNumber, setNewRoomNumber] = useState("");
-  const [loading, setLoading] = useState(true);
-  const db = useFirestore();
+  const [loading, setLoading] = useState(false);
 
-  useEffect(() => {
-    fetchRooms();
-  }, [db]);
-
-  const fetchRooms = async () => {
-    const querySnapshot = await getDocs(collection(db, "rooms"));
-    setRooms(querySnapshot.docs.map(d => ({ id: d.id, ...d.data() })));
-    setLoading(false);
-  };
-
-  const handleAddRoom = async (e: React.FormEvent) => {
+  const handleAddRoom = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newRoomNumber) return;
-    try {
-      await addDoc(collection(db, "rooms"), {
-        room_number: newRoomNumber,
-        created_at: serverTimestamp(),
-      });
-      setNewRoomNumber("");
-      fetchRooms();
-    } catch (err) {
-      console.error(err);
-    }
+    const newRoom = {
+      id: Math.random().toString(36).substr(2, 9),
+      room_number: newRoomNumber,
+      created_at: { toDate: () => new Date() }
+    };
+    setRooms([...rooms, newRoom]);
+    setNewRoomNumber("");
   };
 
-  const handleDeleteRoom = async (id: string) => {
+  const handleDeleteRoom = (id: string) => {
     if (confirm("Are you sure you want to delete this room?")) {
-      await deleteDoc(doc(db, "rooms", id));
-      fetchRooms();
+      setRooms(rooms.filter(r => r.id !== id));
     }
   };
 
   const downloadQR = (roomId: string, roomName: string) => {
-    const svg = document.getElementById(`qr-${roomId}`);
-    if (!svg) return;
-    const svgData = new XMLSerializer().serializeToString(svg);
-    const canvas = document.createElement("canvas");
-    const ctx = canvas.getContext("2d");
-    const img = new Image();
-    img.onload = () => {
-      canvas.width = img.width + 100;
-      canvas.height = img.height + 150;
-      if (ctx) {
-        ctx.fillStyle = "white";
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-        ctx.drawImage(img, 50, 50);
-        ctx.fillStyle = "black";
-        ctx.font = "bold 24px Inter";
-        ctx.textAlign = "center";
-        ctx.fillText(`NEU Room: ${roomName}`, canvas.width / 2, img.height + 100);
-      }
-      const pngFile = canvas.toDataURL("image/png");
-      const downloadLink = document.createElement("a");
-      downloadLink.download = `QR_Room_${roomName}.png`;
-      downloadLink.href = pngFile;
-      downloadLink.click();
-    };
-    img.src = "data:image/svg+xml;base64," + btoa(svgData);
+    // Demo version - just alert
+    alert(`Downloading QR for ${roomName}`);
   };
 
   return (
@@ -83,7 +50,7 @@ export default function AdminRoomsPage() {
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h2 className="text-3xl font-headline font-bold text-primary">Classrooms</h2>
-          <p className="text-muted-foreground">Manage school rooms and generate QR codes for check-ins.</p>
+          <p className="text-muted-foreground">Manage school rooms and generate QR codes for check-ins. (Mock Data)</p>
         </div>
         <Dialog>
           <DialogTrigger asChild>
@@ -131,7 +98,7 @@ export default function AdminRoomsPage() {
                     </div>
                   </TableCell>
                   <TableCell className="hidden md:table-cell text-muted-foreground">
-                    {room.created_at?.toDate().toLocaleDateString()}
+                    {room.created_at.toDate().toLocaleDateString()}
                   </TableCell>
                   <TableCell className="text-right">
                     <div className="flex justify-end gap-2">
@@ -157,7 +124,7 @@ export default function AdminRoomsPage() {
                               />
                             </div>
                             <Button onClick={() => downloadQR(room.id, room.room_number)} className="gap-2">
-                              <Download className="h-4 w-4" /> Download PNG
+                              <Download className="h-4 w-4" /> Download PNG (Demo)
                             </Button>
                           </div>
                         </DialogContent>

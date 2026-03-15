@@ -1,9 +1,6 @@
-
 "use client";
 
-import { useState, useEffect } from "react";
-import { useFirestore } from "@/firebase";
-import { collection, getDocs, query, where, updateDoc, doc } from "firebase/firestore";
+import { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
@@ -11,38 +8,26 @@ import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { ShieldAlert, ShieldCheck, User } from "lucide-react";
 
+// Mock Data
+const MOCK_USERS = [
+  { id: "u1", displayName: "Dr. Alice Smith", email: "alice.smith@neu.edu.ph", is_blocked: false },
+  { id: "u2", displayName: "Prof. Bob Johnson", email: "bob.johnson@neu.edu.ph", is_blocked: true },
+  { id: "u3", displayName: "Dr. Catherine Lee", email: "cat.lee@neu.edu.ph", is_blocked: false },
+];
+
 export default function AdminUsersPage() {
-  const [users, setUsers] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-  const db = useFirestore();
+  const [users, setUsers] = useState<any[]>(MOCK_USERS);
+  const [loading, setLoading] = useState(false);
 
-  useEffect(() => {
-    fetchUsers();
-  }, [db]);
-
-  const fetchUsers = async () => {
-    const q = query(collection(db, "users"), where("role", "==", "professor"));
-    const querySnapshot = await getDocs(q);
-    setUsers(querySnapshot.docs.map(d => ({ id: d.id, ...d.data() })));
-    setLoading(false);
-  };
-
-  const toggleBlock = async (userId: string, currentStatus: boolean) => {
-    try {
-      await updateDoc(doc(db, "users", userId), {
-        is_blocked: !currentStatus
-      });
-      setUsers(users.map(u => u.id === userId ? { ...u, is_blocked: !currentStatus } : u));
-    } catch (err) {
-      console.error(err);
-    }
+  const toggleBlock = (userId: string, currentStatus: boolean) => {
+    setUsers(users.map(u => u.id === userId ? { ...u, is_blocked: !currentStatus } : u));
   };
 
   return (
     <div className="space-y-6 max-w-5xl mx-auto">
       <div>
         <h2 className="text-3xl font-headline font-bold text-primary">User Management</h2>
-        <p className="text-muted-foreground">Manage access for professors and instructional staff.</p>
+        <p className="text-muted-foreground">Manage access for professors and instructional staff. (Mock Data)</p>
       </div>
 
       <Card>

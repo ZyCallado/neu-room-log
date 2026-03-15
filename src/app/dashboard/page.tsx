@@ -1,140 +1,29 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useAuth } from "@/context/AuthContext";
-import { useFirestore } from "@/firebase";
-import { 
-  collection, 
-  addDoc, 
-  updateDoc, 
-  doc, 
-  serverTimestamp, 
-  getDoc,
-  query,
-  where,
-  onSnapshot,
-  orderBy,
-  limit
-} from "firebase/firestore";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Scanner } from "@yudiel/react-qr-scanner";
-import { LogOut, Scan, MapPin, CheckCircle2, AlertTriangle } from "lucide-react";
+import { LogOut, Scan, MapPin, CheckCircle2, AlertTriangle, Eye } from "lucide-react";
 import { InstallPrompt } from "@/components/InstallPrompt";
-import { errorEmitter } from '@/firebase/error-emitter';
-import { FirestorePermissionError } from '@/firebase/errors';
 
 export default function ProfessorDashboard() {
   const { user, signOut } = useAuth();
   const [isScanning, setIsScanning] = useState(false);
-  const [scannedRoomId, setScannedRoomId] = useState<string | null>(null);
-  const [roomDetails, setRoomDetails] = useState<any>(null);
   const [activeSession, setActiveSession] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
-  const db = useFirestore();
 
-  useEffect(() => {
-    if (!user) return;
-
-    // Explicitly including professor_id in the query to satisfy security rules 
-    // that check resource.data.professor_id for listing logs.
-    const q = query(
-      collection(db, "users", user.uid, "logs"),
-      where("professor_id", "==", user.uid),
-      where("time_out", "==", null),
-      orderBy("time_in", "desc"),
-      limit(1)
-    );
-
-    const unsubscribe = onSnapshot(q, 
-      (snapshot) => {
-        if (!snapshot.empty) {
-          const docSnap = snapshot.docs[0];
-          setActiveSession({ id: docSnap.id, ...docSnap.data() });
-        } else {
-          setActiveSession(null);
-        }
-        setLoading(false);
-      },
-      async (error) => {
-        const permissionError = new FirestorePermissionError({
-          path: `users/${user.uid}/logs`,
-          operation: 'list',
-        });
-        errorEmitter.emit('permission-error', permissionError);
-        setLoading(false);
-      }
-    );
-
-    return () => unsubscribe();
-  }, [user, db]);
-
-  const handleScan = async (result: string | null) => {
-    if (result) {
-      setIsScanning(false);
-      setScannedRoomId(result);
-      try {
-        const roomDoc = await getDoc(doc(db, "rooms", result));
-        if (roomDoc.exists()) {
-          setRoomDetails({ id: roomDoc.id, ...roomDoc.data() });
-        } else {
-          alert("Invalid Room QR Code");
-          setScannedRoomId(null);
-        }
-      } catch (err) {
-        const permissionError = new FirestorePermissionError({
-          path: `rooms/${result}`,
-          operation: 'get',
-        });
-        errorEmitter.emit('permission-error', permissionError);
-        setScannedRoomId(null);
-      }
+  // Mock toggle for UI preview
+  const toggleDemoSession = () => {
+    if (activeSession) {
+      setActiveSession(null);
+    } else {
+      setActiveSession({
+        id: "demo-id",
+        room_number: "Room 101",
+        time_in: new Date()
+      });
     }
   };
-
-  const handleCheckIn = () => {
-    if (!user || !roomDetails) return;
-    const logData = {
-      professor_id: user.uid,
-      professor_name: user.displayName,
-      room_id: roomDetails.id,
-      room_number: roomDetails.room_number,
-      time_in: serverTimestamp(),
-      time_out: null,
-    };
-
-    const logsRef = collection(db, "users", user.uid, "logs");
-    addDoc(logsRef, logData)
-      .then(() => {
-        setScannedRoomId(null);
-        setRoomDetails(null);
-      })
-      .catch(async (error) => {
-        const permissionError = new FirestorePermissionError({
-          path: logsRef.path,
-          operation: 'create',
-          requestResourceData: logData,
-        });
-        errorEmitter.emit('permission-error', permissionError);
-      });
-  };
-
-  const handleCheckOut = () => {
-    if (!activeSession || !user) return;
-    const logRef = doc(db, "users", user.uid, "logs", activeSession.id);
-    updateDoc(logRef, {
-      time_out: serverTimestamp(),
-    }).catch(async (error) => {
-      const permissionError = new FirestorePermissionError({
-        path: logRef.path,
-        operation: 'update',
-        requestResourceData: { time_out: 'serverTimestamp()' },
-      });
-      errorEmitter.emit('permission-error', permissionError);
-    });
-  };
-
-  if (loading) return <div className="p-8 text-center">Loading dashboard...</div>;
 
   if (user?.is_blocked) {
     return (
@@ -165,18 +54,23 @@ export default function ProfessorDashboard() {
       </header>
 
       <main className="mx-auto max-w-lg p-4 space-y-6">
-        <div className="flex items-center gap-4 py-2">
-          <div className="h-12 w-12 rounded-full bg-secondary flex items-center justify-center text-secondary-foreground font-bold">
-            {user?.displayName?.charAt(0)}
+        <div className="flex items-center justify-between py-2">
+          <div className="flex items-center gap-4">
+            <div className="h-12 w-12 rounded-full bg-secondary flex items-center justify-center text-secondary-foreground font-bold">
+              {user?.displayName?.charAt(0)}
+            </div>
+            <div>
+              <h2 className="text-lg font-semibold leading-none">{user?.displayName}</h2>
+              <p className="text-sm text-muted-foreground">Professor Dashboard (UI Demo)</p>
+            </div>
           </div>
-          <div>
-            <h2 className="text-lg font-semibold leading-none">{user?.displayName}</h2>
-            <p className="text-sm text-muted-foreground">Professor Dashboard</p>
-          </div>
+          <Button variant="outline" size="sm" onClick={toggleDemoSession} className="gap-2">
+            <Eye className="h-4 w-4" /> Preview Active
+          </Button>
         </div>
 
         {activeSession ? (
-          <Card className="border-secondary bg-secondary/5">
+          <Card className="border-secondary bg-secondary/5 animate-in zoom-in-95 duration-200">
             <CardHeader className="text-center pb-2">
               <div className="mx-auto h-16 w-16 bg-secondary/10 text-secondary rounded-full flex items-center justify-center mb-2">
                 <CheckCircle2 className="h-10 w-10" />
@@ -192,38 +86,15 @@ export default function ProfessorDashboard() {
               <p className="text-center text-sm text-muted-foreground italic">
                 Thank you for using this room. Remember to check out when you leave.
               </p>
-              <Button variant="destructive" className="w-full py-6 text-lg" onClick={handleCheckOut}>
+              <Button variant="destructive" className="w-full py-6 text-lg" onClick={() => setActiveSession(null)}>
                 Check-out
               </Button>
             </CardContent>
           </Card>
-        ) : scannedRoomId ? (
-          <Card className="animate-in zoom-in-95 duration-200">
-            <CardHeader className="text-center">
-              <CardTitle>Room Scanned</CardTitle>
-              <CardDescription>Confirm your location</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="rounded-xl border bg-muted p-8 text-center">
-                <p className="text-sm text-muted-foreground mb-1 uppercase tracking-wider font-semibold">Room Number</p>
-                <p className="text-4xl font-headline font-bold text-primary">{roomDetails?.room_number}</p>
-              </div>
-              <p className="text-center text-sm text-muted-foreground">
-                You are about to check into Room {roomDetails?.room_number}.
-              </p>
-              <div className="grid grid-cols-2 gap-3">
-                <Button variant="outline" onClick={() => setScannedRoomId(null)}>Cancel</Button>
-                <Button onClick={handleCheckIn}>Confirm Check-in</Button>
-              </div>
-            </CardContent>
-          </Card>
         ) : isScanning ? (
-          <div className="space-y-4">
-            <div className="overflow-hidden rounded-2xl border bg-black aspect-square relative shadow-xl">
-              <Scanner 
-                onResult={(text) => handleScan(text)}
-                onError={(error) => console.log(error?.message)}
-              />
+          <div className="space-y-4 animate-in fade-in">
+            <div className="overflow-hidden rounded-2xl border bg-black aspect-square relative shadow-xl flex items-center justify-center">
+              <p className="text-white text-center px-6">QR Scanner Component would appear here. <br/> <span className="text-xs opacity-60">(Disabled for UI Inspection)</span></p>
               <div className="absolute inset-0 border-2 border-primary/50 pointer-events-none rounded-2xl"></div>
             </div>
             <Button variant="outline" className="w-full" onClick={() => setIsScanning(false)}>
