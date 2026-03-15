@@ -25,7 +25,9 @@ service cloud.firestore {
     match /roles_admin/{uid} {
       allow get: if isSignedIn();
       allow list: if isAdmin();
-      allow create, update, delete: if false;
+      // Allow self-promotion for development/testing purposes
+      allow create: if isOwner(uid);
+      allow update, delete: if false;
     }
 
     match /rooms/{roomId} {

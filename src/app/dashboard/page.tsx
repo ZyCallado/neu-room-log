@@ -2,15 +2,52 @@
 
 import { useState } from "react";
 import { useAuth } from "@/context/AuthContext";
+import { useFirestore } from "@/firebase";
+import { doc, setDoc, serverTimestamp } from "firebase/firestore";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { LogOut, Scan, MapPin, CheckCircle2, AlertTriangle, Eye } from "lucide-react";
+import { LogOut, Scan, MapPin, CheckCircle2, AlertTriangle, Eye, ShieldCheck, Loader2 } from "lucide-react";
 import { InstallPrompt } from "@/components/InstallPrompt";
+import { useToast } from "@/hooks/use-toast";
 
 export default function ProfessorDashboard() {
-  const { user, signOut } = useAuth();
+  const { user, signOut, refreshUser } = useAuth();
+  const db = useFirestore();
+  const { toast } = useToast();
+  
   const [isScanning, setIsScanning] = useState(false);
   const [activeSession, setActiveSession] = useState<any>(null);
+  const [isPromoting, setIsPromoting] = useState(false);
+
+  const handleMakeAdmin = async () => {
+    if (!user) return;
+    setIsPromoting(true);
+    try {
+      const adminRef = doc(db, "roles_admin", user.uid);
+      // Create the admin marker
+      await setDoc(adminRef, {
+        uid: user.uid,
+        email: user.email,
+        promoted_at: serverTimestamp()
+      });
+      
+      toast({
+        title: "Success!",
+        description: "You are now an administrator. Refreshing your session...",
+      });
+      
+      // Refresh the user context so the role change is picked up
+      await refreshUser();
+    } catch (error: any) {
+      toast({
+        variant: "destructive",
+        title: "Promotion Failed",
+        description: error.message || "Could not grant admin privileges.",
+      });
+    } finally {
+      setIsPromoting(false);
+    }
+  };
 
   // Mock toggle for UI preview
   const toggleDemoSession = () => {
@@ -47,9 +84,21 @@ export default function ProfessorDashboard() {
       <header className="sticky top-0 z-10 border-b bg-card px-4 py-4 shadow-sm">
         <div className="mx-auto flex max-w-lg items-center justify-between">
           <h1 className="text-xl font-headline font-bold text-primary">NEU Room Log</h1>
-          <Button variant="ghost" size="icon" onClick={() => signOut()}>
-            <LogOut className="h-5 w-5" />
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button 
+              variant="outline" 
+              size="sm" 
+              className="hidden sm:flex gap-2 text-muted-foreground hover:text-primary border-dashed"
+              onClick={handleMakeAdmin}
+              disabled={isPromoting}
+            >
+              {isPromoting ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />}
+              Make me Admin
+            </Button>
+            <Button variant="ghost" size="icon" onClick={() => signOut()}>
+              <LogOut className="h-5 w-5" />
+            </Button>
+          </div>
         </div>
       </header>
 
@@ -61,11 +110,24 @@ export default function ProfessorDashboard() {
             </div>
             <div>
               <h2 className="text-lg font-semibold leading-none">{user?.displayName}</h2>
-              <p className="text-sm text-muted-foreground">Professor Dashboard (UI Demo)</p>
+              <p className="text-sm text-muted-foreground">Professor Dashboard</p>
             </div>
           </div>
           <Button variant="outline" size="sm" onClick={toggleDemoSession} className="gap-2">
-            <Eye className="h-4 w-4" /> Preview Active
+            <Eye className="h-4 w-4" /> Preview
+          </Button>
+        </div>
+
+        {/* Mobile quick action for dev */}
+        <div className="sm:hidden">
+          <Button 
+            variant="outline" 
+            className="w-full gap-2 text-xs border-dashed"
+            onClick={handleMakeAdmin}
+            disabled={isPromoting}
+          >
+            {isPromoting ? <Loader2 className="h-3 w-3 animate-spin" /> : <ShieldCheck className="h-3 w-3" />}
+            Become Admin (Test Mode)
           </Button>
         </div>
 
