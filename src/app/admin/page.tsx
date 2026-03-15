@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useFirestore } from "@/firebase";
-import { collection, getDocs, query, orderBy } from "firebase/firestore";
+import { collectionGroup, getDocs, query, orderBy } from "firebase/firestore";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Input } from "@/components/ui/input";
@@ -30,8 +30,8 @@ export default function AdminDashboard() {
   const fetchLogs = async () => {
     setLoading(true);
     try {
-      // Collection group query to see all logs
-      const q = query(collection(db, "logs"), orderBy("time_in", "desc"));
+      // Using collectionGroup to correctly fetch all logs from nested subcollections
+      const q = query(collectionGroup(db, "logs"), orderBy("time_in", "desc"));
       const querySnapshot = await getDocs(q);
       const data = querySnapshot.docs.map(d => ({ id: d.id, ...d.data() }));
       setLogs(data);
@@ -57,7 +57,7 @@ export default function AdminDashboard() {
       const totalHours = Math.round(totalMs / (1000 * 60 * 60));
 
       setStats({ activeNow: active, mostUsed, totalHours });
-    } catch (err) {
+    } catch (err: any) {
       const permissionError = new FirestorePermissionError({
         path: 'logs',
         operation: 'list',

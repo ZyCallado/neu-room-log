@@ -36,10 +36,11 @@ export default function ProfessorDashboard() {
   useEffect(() => {
     if (!user) return;
 
-    // Fetch active session using collection group query for convenience, 
-    // or direct subcollection query which is safer.
+    // Explicitly including professor_id in the query to satisfy security rules 
+    // that check resource.data.professor_id for listing logs.
     const q = query(
       collection(db, "users", user.uid, "logs"),
+      where("professor_id", "==", user.uid),
       where("time_out", "==", null),
       orderBy("time_in", "desc"),
       limit(1)
@@ -102,7 +103,6 @@ export default function ProfessorDashboard() {
       time_out: null,
     };
 
-    // Use specific subcollection for mutations to ensure path-based ownership rules trigger
     const logsRef = collection(db, "users", user.uid, "logs");
     addDoc(logsRef, logData)
       .then(() => {
