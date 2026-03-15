@@ -1,12 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { QRCodeSVG } from "qrcode.react";
-import { Plus, Download, Trash2, DoorOpen, QrCode, Loader2, AlertTriangle } from "lucide-react";
+import { Plus, Download, Trash2, DoorOpen, QrCode, Loader2, AlertTriangle, Search } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { useFirestore, useCollection, useMemoFirebase } from "@/firebase";
@@ -18,11 +18,24 @@ export default function AdminRoomsPage() {
   const db = useFirestore();
   const { toast } = useToast();
   const [newRoomNumber, setNewRoomNumber] = useState("");
+  const [searchTerm, setSearchTerm] = useState("");
   const [isAdding, setIsAdding] = useState(false);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
 
   const roomsQuery = useMemoFirebase(() => collection(db, "rooms"), [db]);
   const { data: rooms, isLoading } = useCollection(roomsQuery);
+
+  // Filter and Sort Rooms alphabetically by room_number
+  const filteredSortedRooms = useMemo(() => {
+    if (!rooms) return [];
+    return rooms
+      .filter(room => 
+        room.room_number.toLowerCase().includes(searchTerm.toLowerCase())
+      )
+      .sort((a, b) => 
+        a.room_number.localeCompare(b.room_number, undefined, { numeric: true, sensitivity: 'base' })
+      );
+  }, [rooms, searchTerm]);
 
   const handleAddRoom = (e: React.FormEvent) => {
     e.preventDefault();
@@ -86,30 +99,41 @@ export default function AdminRoomsPage() {
           <h2 className="text-3xl font-headline font-bold text-primary">Classrooms</h2>
           <p className="text-muted-foreground">Manage school rooms and generate permanent QR codes for check-ins.</p>
         </div>
-        <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-          <DialogTrigger asChild>
-            <Button className="gap-2 shadow-lg"><Plus className="h-5 w-5" /> Add New Room</Button>
-          </DialogTrigger>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Add Classroom</DialogTitle>
-              <DialogDescription>Enter the room identifier (e.g., Room 101, Lab B).</DialogDescription>
-            </DialogHeader>
-            <form onSubmit={handleAddRoom} className="space-y-4 pt-4">
-              <Input 
-                placeholder="Room Number/Name" 
-                value={newRoomNumber} 
-                onChange={e => setNewRoomNumber(e.target.value)} 
-                required
-                disabled={isAdding}
-              />
-              <Button type="submit" className="w-full" disabled={isAdding}>
-                {isAdding ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
-                Create Room
-              </Button>
-            </form>
-          </DialogContent>
-        </Dialog>
+        <div className="flex items-center gap-2">
+          <div className="relative">
+            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+            <Input 
+              placeholder="Search rooms..." 
+              className="pl-9 w-[200px] md:w-[300px]"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+            />
+          </div>
+          <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+            <DialogTrigger asChild>
+              <Button className="gap-2 shadow-lg"><Plus className="h-5 w-5" /> Add Room</Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Add Classroom</DialogTitle>
+                <DialogDescription>Enter the room identifier (e.g., Room 101, Lab B).</DialogDescription>
+              </DialogHeader>
+              <form onSubmit={handleAddRoom} className="space-y-4 pt-4">
+                <Input 
+                  placeholder="Room Number/Name" 
+                  value={newRoomNumber} 
+                  onChange={e => setNewRoomNumber(e.target.value)} 
+                  required
+                  disabled={isAdding}
+                />
+                <Button type="submit" className="w-full" disabled={isAdding}>
+                  {isAdding ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+                  Create Room
+                </Button>
+              </form>
+            </DialogContent>
+          </Dialog>
+        </div>
       </div>
 
       <Card>
@@ -127,9 +151,11 @@ export default function AdminRoomsPage() {
                 <TableRow><TableCell colSpan={3} className="text-center py-10">
                   <Loader2 className="h-8 w-8 animate-spin mx-auto text-primary" />
                 </TableCell></TableRow>
-              ) : !rooms || rooms.length === 0 ? (
-                <TableRow><TableCell colSpan={3} className="text-center py-10 text-muted-foreground">No rooms found. Add one to get started.</TableCell></TableRow>
-              ) : rooms.map((room) => (
+              ) : filteredSortedRooms.length === 0 ? (
+                <TableRow><TableCell colSpan={3} className="text-center py-10 text-muted-foreground">
+                  {searchTerm ? "No matching rooms found." : "No rooms found. Add one to get started."}
+                </TableCell></TableRow>
+              ) : filteredSortedRooms.map((room) => (
                 <TableRow key={room.id}>
                   <TableCell className="font-medium">
                     <div className="flex items-center gap-2">
