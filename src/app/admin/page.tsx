@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useState, useMemo } from "react";
@@ -6,17 +5,16 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Users, Clock, MapPin, Search, Sparkles, BrainCircuit, Loader2 } from "lucide-react";
+import { Users, Clock, MapPin, Search, Sparkles, BrainCircuit, Loader2, Calendar } from "lucide-react";
 import { generateRoomUsageInsights } from "@/ai/flows/generate-room-usage-insights";
 import { Button } from "@/components/ui/button";
 import { useFirestore, useCollection, useMemoFirebase } from "@/firebase";
 import { collection, query, orderBy } from "firebase/firestore";
-import { format, differenceInMinutes, startOfWeek } from "date-fns";
+import { format, isSameDay, isSameWeek, isSameMonth, startOfDay } from "date-fns";
 
 export default function AdminDashboard() {
   const db = useFirestore();
   const [searchTerm, setSearchTerm] = useState("");
-  const [dateFilter, setDateFilter] = useState("all");
   const [aiInsights, setAiInsights] = useState<string | null>(null);
   const [generatingAi, setGeneratingAi] = useState(false);
 
@@ -24,30 +22,27 @@ export default function AdminDashboard() {
   const { data: logs, isLoading } = useCollection(logsQuery);
 
   const stats = useMemo(() => {
-    if (!logs) return { activeNow: 0, mostUsed: "---", totalHours: 0 };
+    if (!logs) return { activeNow: 0, daily: 0, weekly: 0, monthly: 0 };
 
+    const now = new Date();
     const activeNow = logs.filter(l => !l.time_out).length;
     
-    const roomCounts: Record<string, number> = {};
-    let totalMinutes = 0;
-    const weekStart = startOfWeek(new Date());
+    let daily = 0;
+    let weekly = 0;
+    let monthly = 0;
 
     logs.forEach(log => {
-      roomCounts[log.room_number] = (roomCounts[log.room_number] || 0) + 1;
-      
       const tIn = log.time_in?.toDate ? log.time_in.toDate() : new Date(log.time_in);
-      if (tIn >= weekStart) {
-        const tOut = log.time_out ? (log.time_out.toDate ? log.time_out.toDate() : new Date(log.time_out)) : new Date();
-        totalMinutes += differenceInMinutes(tOut, tIn);
-      }
+      if (isSameDay(tIn, now)) daily++;
+      if (isSameWeek(tIn, now)) weekly++;
+      if (isSameMonth(tIn, now)) monthly++;
     });
-
-    const mostUsed = Object.entries(roomCounts).reduce((a, b) => a[1] > b[1] ? a : b, ["---", 0])[0];
 
     return {
       activeNow,
-      mostUsed,
-      totalHours: Math.round(totalMinutes / 60)
+      daily,
+      weekly,
+      monthly
     };
   }, [logs]);
 
@@ -110,7 +105,7 @@ export default function AdminDashboard() {
         </Card>
       )}
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
         <Card className="shadow-sm border-l-4 border-l-secondary">
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground uppercase tracking-wider">Active Now</CardTitle>
@@ -118,27 +113,37 @@ export default function AdminDashboard() {
           </CardHeader>
           <CardContent>
             <div className="text-4xl font-headline font-bold">{stats.activeNow}</div>
-            <p className="text-xs text-muted-foreground mt-1">Professors in classrooms</p>
+            <p className="text-xs text-muted-foreground mt-1">Professors currently in class</p>
           </CardContent>
         </Card>
         <Card className="shadow-sm border-l-4 border-l-primary">
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground uppercase tracking-wider">Most Used Room</CardTitle>
-            <MapPin className="h-5 w-5 text-primary" />
+            <CardTitle className="text-sm font-medium text-muted-foreground uppercase tracking-wider">Daily Uses</CardTitle>
+            <Calendar className="h-5 w-5 text-primary" />
           </CardHeader>
           <CardContent>
-            <div className="text-4xl font-headline font-bold truncate">{stats.mostUsed}</div>
-            <p className="text-xs text-muted-foreground mt-1">Highest frequency room</p>
+            <div className="text-4xl font-headline font-bold">{stats.daily}</div>
+            <p className="text-xs text-muted-foreground mt-1">Total check-ins today</p>
           </CardContent>
         </Card>
         <Card className="shadow-sm border-l-4 border-l-accent">
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground uppercase tracking-wider">Weekly Usage</CardTitle>
+            <CardTitle className="text-sm font-medium text-muted-foreground uppercase tracking-wider">Weekly Uses</CardTitle>
             <Clock className="h-5 w-5 text-accent" />
           </CardHeader>
           <CardContent>
-            <div className="text-4xl font-headline font-bold">{stats.totalHours}h</div>
-            <p className="text-xs text-muted-foreground mt-1">Total duration this week</p>
+            <div className="text-4xl font-headline font-bold">{stats.weekly}</div>
+            <p className="text-xs text-muted-foreground mt-1">Total check-ins this week</p>
+          </CardContent>
+        </Card>
+        <Card className="shadow-sm border-l-4 border-l-orange-500">
+          <CardHeader className="flex flex-row items-center justify-between pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground uppercase tracking-wider">Monthly Uses</CardTitle>
+            <MapPin className="h-5 w-5 text-orange-500" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-4xl font-headline font-bold">{stats.monthly}</div>
+            <p className="text-xs text-muted-foreground mt-1">Total check-ins this month</p>
           </CardContent>
         </Card>
       </div>
@@ -147,28 +152,17 @@ export default function AdminDashboard() {
         <CardHeader className="pb-4">
           <div className="flex flex-col md:flex-row justify-between items-center gap-4">
             <div>
-              <CardTitle>Usage Logs</CardTitle>
+              <CardTitle>Activity Logs</CardTitle>
               <CardDescription>Comprehensive history of all classroom check-ins.</CardDescription>
             </div>
-            <div className="flex items-center gap-2 w-full md:w-auto">
-              <div className="relative flex-1">
-                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-                <Input 
-                  placeholder="Search professor or room..." 
-                  className="pl-9 w-full md:w-[300px]"
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                />
-              </div>
-              <Select value={dateFilter} onValueChange={setDateFilter}>
-                <SelectTrigger className="w-[150px]">
-                  <SelectValue placeholder="Date Range" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Time</SelectItem>
-                  <SelectItem value="today">Today</SelectItem>
-                </SelectContent>
-              </Select>
+            <div className="relative w-full md:w-[300px]">
+              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+              <Input 
+                placeholder="Search professor or room..." 
+                className="pl-9"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+              />
             </div>
           </div>
         </CardHeader>

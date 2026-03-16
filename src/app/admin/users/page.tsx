@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useState, useMemo } from "react";
@@ -75,7 +74,7 @@ export default function AdminUsersPage() {
                 <TableRow key={u.id}>
                   <TableCell>
                     <div className="flex items-center gap-3">
-                      <div className="h-8 w-8 rounded-full bg-primary/10 text-primary flex items-center justify-center text-xs font-bold uppercase">
+                      <div className="h-8 w-8 rounded-full bg-primary/10 text-primary flex items-center justify-center text-xs font-bold uppercase overflow-hidden">
                         {u.name?.charAt(0) || <User className="h-4 w-4" />}
                       </div>
                       <span className="font-medium">{u.name}</span>
@@ -94,8 +93,8 @@ export default function AdminUsersPage() {
                       <Label htmlFor={`block-${u.id}`} className="sr-only">Toggle Block</Label>
                       <Switch 
                         id={`block-${u.id}`} 
-                        checked={u.is_blocked} 
-                        onCheckedChange={() => toggleBlock(u.id, u.is_blocked)} 
+                        checked={u.is_blocked || false} 
+                        onCheckedChange={() => toggleBlock(u.id, u.is_blocked || false)} 
                       />
                     </div>
                   </TableCell>

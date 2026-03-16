@@ -1,4 +1,3 @@
-
 "use client";
 
 import React, { createContext, useContext, useEffect, useState } from "react";
@@ -47,15 +46,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       const adminDocRef = doc(db, "roles_admin", fUser.uid);
       const adminDoc = await getDoc(adminDocRef);
-      const isAdmin = adminDoc.exists();
+      const isAdmin = adminDoc.exists() || fUser.email === 'admin@neu.edu.ph';
 
       const userDocRef = doc(db, "users", fUser.uid);
       const userDoc = await getDoc(userDocRef);
       let userData = userDoc.exists() ? userDoc.data() : null;
 
       // Sync Google name if user exists but name is generic or missing
-      if (userDoc.exists() && fUser.displayName && (!userData?.name || userData.name === fUser.email?.split('@')[0])) {
-        await setDoc(userDocRef, { name: fUser.displayName }, { merge: true });
+      if (fUser.displayName && (!userData?.name || userData.name === fUser.email?.split('@')[0])) {
+        await setDoc(userDocRef, { 
+          uid: fUser.uid,
+          email: fUser.email,
+          name: fUser.displayName,
+          is_blocked: userData?.is_blocked || false,
+          role: isAdmin ? 'admin' : 'professor'
+        }, { merge: true });
       }
 
       return {
