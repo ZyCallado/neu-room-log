@@ -5,7 +5,7 @@ import { useState, useMemo, useEffect } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { useFirestore, useCollection, useMemoFirebase } from "@/firebase";
 import { collection, query, where, orderBy, limit, doc, serverTimestamp, getDoc } from "firebase/firestore";
-import { addDocumentNonBlocking, updateDocumentNonBlocking } from "@/firebase/non-blocking-updates";
+import { setDocumentNonBlocking, updateDocumentNonBlocking } from "@/firebase/non-blocking-updates";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -130,13 +130,13 @@ export default function ProfessorDashboard() {
       time_out: null,
     };
 
-    // 1. User specific log
+    // 1. User specific log - Use setDocumentNonBlocking for creation
     const userLogRef = doc(db, "users", user.uid, "logs", logId);
-    updateDocumentNonBlocking(userLogRef, logData);
+    setDocumentNonBlocking(userLogRef, logData, {});
 
-    // 2. Global activity log
+    // 2. Global activity log - Use setDocumentNonBlocking for creation
     const globalLogRef = doc(db, "activity_logs", logId);
-    updateDocumentNonBlocking(globalLogRef, logData);
+    setDocumentNonBlocking(globalLogRef, logData, {});
 
     // 3. Room status
     const roomRef = doc(db, "rooms", scannedRoom.id);
