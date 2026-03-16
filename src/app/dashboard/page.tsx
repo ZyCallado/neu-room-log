@@ -1,5 +1,5 @@
 
-"use client"
+"use client";
 
 import { useState, useMemo, useEffect } from "react";
 import { useAuth } from "@/context/AuthContext";
