@@ -48,10 +48,14 @@ Access is strictly controlled via Firestore Security Rules:
 - **Role-Based Access**: Administrative functions (user blocking, room deletion, global logs) are restricted to verified admins.
 - **Ownership**: Professors can only manage their own usage logs.
 
-## 🛠️ Setup
+# Live Link
+[https://neu-room-log.vercel.app/](https://neu-room-log.vercel.app/)
 
-1. **Firebase Project**: Create a project in the Firebase Console.
-2. **Authentication**: Enable Google and Email/Password providers.
-3. **Firestore**: Provision a Firestore instance in production mode.
-4. **Environment**: Ensure `src/firebase/config.ts` contains your web app's configuration.
-5. **Admin Setup**: To grant admin access, manually create a document in the `roles_admin` collection with the user's UID or use the `admin@neu.edu.ph` email override.
+# Previews
+| Login Page | Professor Check-In |
+|:---:|:---:|
+| <img width="1900" height="938" alt="image" src="https://github.com/user-attachments/assets/10c81725-6d0b-4489-8189-4c665083e33b" /> | <img width="582" height="822" alt="image" src="https://github.com/user-attachments/assets/8d774a1f-6012-4de5-a15f-e479b4590025" /> |
+
+| Room Management | Admin Dashboard |
+|:---:|:---:|
+| <img width="1143" height="931" alt="image" src="https://github.com/user-attachments/assets/04e8bc8d-16f7-4901-bf22-3359d1fbb8b5" /> | <img width="1657" height="573" alt="image" src="https://github.com/user-attachments/assets/d30d4576-5790-4e96-99e7-655a9c9f1af6" /> |
